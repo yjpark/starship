@@ -81,7 +81,7 @@ pub fn get_prompt(context: Context) -> String {
             .map(|(w, _)| w);
     }
     if let Some(term_width) = term_width {
-        let line = std::iter::repeat("=").take(term_width).collect::<String>();
+        let line = std::iter::repeat("═").take(term_width).collect::<String>();
         write!(buf, "{}\n", line).unwrap();
     }
     write!(buf, "{}", ANSIStrings(&module_strings)).unwrap();
