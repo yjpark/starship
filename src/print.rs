@@ -75,6 +75,12 @@ pub fn get_prompt(context: Context) -> String {
     if config.add_newline {
         writeln!(buf).unwrap();
     }
+    let desc_width = term_size::dimensions()
+        .map(|(w, _)| w);
+    if let Some(desc_width) = desc_width {
+        let line = std::iter::repeat("=").take(desc_width).collect::<String>();
+        write!(buf, "{}\n", line).unwrap();
+    }
     write!(buf, "{}", ANSIStrings(&module_strings)).unwrap();
 
     buf
