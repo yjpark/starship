@@ -9,13 +9,14 @@ function global:prompt {
 
     $env:PWD = $PWD
     $current_directory = (Convert-Path -LiteralPath $PWD)
+    $term_width = $Host.UI.RawUI.WindowSize.Width
 
     if ($lastCmd = Get-History -Count 1) {
         $duration = [math]::Round(($lastCmd.EndExecutionTime - $lastCmd.StartExecutionTime).TotalMilliseconds)
         # & ensures the path is interpreted as something to execute
-        $out = @(&::STARSHIP:: prompt "--path=$current_directory" --status=$lastexitcode --jobs=$jobs --cmd-duration=$duration)
+        $out = @(&::STARSHIP:: prompt "--path=$current_directory" --status=$lastexitcode --jobs=$jobs --term-width=$term_width --cmd-duration=$duration)
     } else {
-        $out = @(&::STARSHIP:: prompt "--path=$current_directory" --status=$lastexitcode --jobs=$jobs)
+        $out = @(&::STARSHIP:: prompt "--path=$current_directory" --status=$lastexitcode --jobs=$jobs --term-width=$term_width)
     }
 
     # Convert stdout (array of lines) to expected return type string

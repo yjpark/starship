@@ -202,6 +202,10 @@ impl<'a> Context<'a> {
     pub fn get_cmd_duration(&self) -> Option<u128> {
         self.properties.get("cmd_duration")?.parse::<u128>().ok()
     }
+
+    pub fn get_term_width(&self) -> Option<usize> {
+        self.properties.get("term_width")?.parse::<usize>().ok()
+    }
 }
 
 #[derive(Debug)]
