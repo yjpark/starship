@@ -309,10 +309,6 @@ impl<'a> Context<'a> {
         self.properties.get("cmd_duration")?.parse::<u128>().ok()
     }
 
-    pub fn get_term_width(&self) -> Option<usize> {
-        self.properties.get("term_width")?.parse::<usize>().ok()
-    }
-
     /// Execute a command and return the output on stdout and stderr if successful
     #[inline]
     pub fn exec_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(

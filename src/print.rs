@@ -117,13 +117,8 @@ pub fn get_prompt(context: Context) -> String {
     if config.add_newline {
         writeln!(buf).unwrap();
     }
-    let mut term_width = context.get_term_width();
-    if term_width.is_none() || term_width.unwrap() == 0 {
-        term_width = term_size::dimensions()
-            .map(|(w, _)| w);
-    }
-    if let Some(term_width) = term_width {
-        let line = std::iter::repeat("═").take(term_width).collect::<String>();
+    if context.width > 0 {
+        let line = std::iter::repeat("═").take(context.width).collect::<String>();
         write!(buf, "{}\n", line).unwrap();
     }
     write!(buf, "{}", ANSIStrings(&module_strings)).unwrap();

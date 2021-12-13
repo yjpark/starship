@@ -68,13 +68,6 @@ fn main() {
         .help("The execution duration of the last command, in milliseconds")
         .takes_value(true);
 
-    let term_width_arg = Arg::with_name("term_width")
-        .short("w")
-        .long("term-width")
-        .value_name("TERM_WIDTH")
-        .help("The width of the term, in characters")
-        .takes_value(true);
-
     let keymap_arg = Arg::with_name("keymap")
         .short("k")
         .long("keymap")
@@ -125,7 +118,6 @@ fn main() {
                     .arg(&path_arg)
                     .arg(&logical_path_arg)
                     .arg(&cmd_duration_arg)
-                    .arg(&term_width_arg)
                     .arg(&keymap_arg)
                     .arg(&jobs_arg),
             )
