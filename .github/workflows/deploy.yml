@@ -5,66 +5,66 @@ on:
       - "v*"
 
 jobs:
-  # Publish starship to Crates.io
-  cargo_publish:
-    name: Publish Cargo Package
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v2
-
-      - name: Setup | Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-
-      - name: Build | Publish
-        run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-
-  update_brew_formula:
-    name: Update Brew Formula
-    runs-on: ubuntu-latest
-    steps:
-      - uses: mislav/bump-homebrew-formula-action@v1.6
-        with:
-          formula-name: starship
-        env:
-          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
-
   # Build sources for every OS
   github_build:
     name: Build release binaries
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - x86_64-apple-darwin
-          - x86_64-pc-windows-msvc
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: starship-x86_64-unknown-linux-gnu.tar.gz
+
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             name: starship-x86_64-unknown-linux-musl.tar.gz
+
+          - target: i686-unknown-linux-musl
+            os: ubuntu-latest
+            name: starship-i686-unknown-linux-musl.tar.gz
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            name: starship-aarch64-unknown-linux-musl.tar.gz
+
+          - target: arm-unknown-linux-musleabihf
+            os: ubuntu-latest
+            name: starship-arm-unknown-linux-musleabihf.tar.gz
+
           - target: x86_64-apple-darwin
             os: macOS-latest
             name: starship-x86_64-apple-darwin.tar.gz
+
+          - target: aarch64-apple-darwin
+            os: macOS-latest
+            name: starship-aarch64-apple-darwin.tar.gz
+
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: starship-x86_64-pc-windows-msvc.zip
+
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+            name: starship-i686-pc-windows-msvc.zip
+
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: starship-aarch64-pc-windows-msvc.zip
+
+          - target: x86_64-unknown-freebsd
+            os: ubuntu-latest
+            name: starship-x86_64-unknown-freebsd.tar.gz
+
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.4.0
 
       # Cache files between builds
       - name: Setup | Cache Cargo
-        uses: actions/cache@v2
+        uses: actions/cache@v2.1.7
         with:
           path: |
             ~/.cargo/registry
@@ -72,26 +72,24 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup | Rust
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.7
         with:
           toolchain: stable
           override: true
           profile: minimal
           target: ${{ matrix.target }}
 
-      - name: Setup | musl tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt install -y musl-tools
-
       - name: Build | Build
-        if: matrix.target != 'x86_64-unknown-linux-musl'
-        run: cargo build --release --target ${{ matrix.target }}
+        uses: actions-rs/cargo@v1.0.3
+        # TODO: Remove this once it's the default
+        env:
+          SDKROOT: /Library/Developer/CommandLineTools/SDKs/MacOSX11.1.sdk
+        with:
+          command: build
+          args: --release --locked --features tls-vendored --target ${{ matrix.target }}
+          use-cross: ${{ matrix.os == 'ubuntu-latest' }}
 
-      - name: Build | Build (musl)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: cargo build --release --features tls-vendored --target ${{ matrix.target }}
-
-      - name: Post Setup | Prepare artifacts [Windows]
+      - name: Post Build | Prepare artifacts [Windows]
         if: matrix.os == 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
@@ -99,15 +97,16 @@ jobs:
           7z a ../../../${{ matrix.name }} starship.exe
           cd -
 
-      - name: Post Setup | Prepare artifacts [-nix]
+      - name: Post Build | Prepare artifacts [-nix]
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          strip starship
+          # TODO: investigate better cross platform stripping
+          strip starship || true
           tar czvf ../../../${{ matrix.name }} starship
           cd -
 
-      - name: Post Setup | Upload artifacts
+      - name: Deploy | Upload artifacts
         uses: actions/upload-artifact@v2
         with:
           name: ${{ matrix.name }}
@@ -120,14 +119,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.4.0
         with:
           fetch-depth: 0
 
       - name: Setup | Go
         uses: actions/setup-go@v2
         with:
-          go-version: "^1.13.1"
+          go-version: "1.16"
 
       - name: Setup | Artifacts
         uses: actions/download-artifact@v2
@@ -137,7 +136,7 @@ jobs:
 
       - name: Setup | Release notes
         run: |
-          go get -u github.com/git-chglog/git-chglog/cmd/git-chglog
+          go install github.com/git-chglog/git-chglog/cmd/git-chglog@v0.15.0
           git-chglog -c .github/chglog/release.yml $(git describe --tags) > RELEASE.md
 
       - name: Build | Publish
@@ -145,24 +144,57 @@ jobs:
         with:
           files: starship-*/starship-*
           body_path: RELEASE.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  aur_release:
+
+  # Publish starship to Crates.io
+  cargo_publish:
+    name: Publish Cargo Package
     runs-on: ubuntu-latest
-    name: Create AUR release
-    needs: github_release # The -bin version downloads and shasums it
+    needs: github_release
     steps:
-      - name: Build | Publish AUR package
-        uses: ATiltedTree/create-aur-release@v1
+      - name: Setup | Checkout
+        uses: actions/checkout@v2.4.0
+
+      - name: Setup | Rust
+        uses: actions-rs/toolchain@v1.0.7
         with:
-          package_name: starship
-          commit_username: "Starship Bot"
-          commit_email: starship.bot.noreply@gmail.com
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-      - name: Build | Publish AUR package (-bin version)
-        uses: ATiltedTree/create-aur-release@v1
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build | Publish
+        run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+
+  update_brew_formula:
+    name: Update Brew Formula
+    runs-on: ubuntu-latest
+    needs: github_release
+    steps:
+      - uses: mislav/bump-homebrew-formula-action@v1.12
         with:
-          package_name: starship-bin
-          commit_username: "Starship Bot"
-          commit_email: starship.bot.noreply@gmail.com
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          formula-name: starship
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+
+  publish_docs:
+    name: Publish docs to Netlify
+    runs-on: ubuntu-latest
+    needs: github_release
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2.4.0
+
+      - name: Setup | Install dependencies
+        run: npm install
+        working-directory: docs
+
+      - name: Build | Build docs site
+        run: npm run build
+        working-directory: docs
+
+      - name: Publish
+        uses: netlify/actions/cli@master
+        with:
+          args: deploy --prod --dir=docs/.vuepress/dist
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}

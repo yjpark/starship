@@ -1,7 +1,7 @@
 [package]
 name = "starship_module_config_derive"
-version = "0.1.1"
-edition = "2018"
+version = "0.2.1"
+edition = "2021"
 authors = ["Matan Kushner <hello@matchai.me>"]
 homepage = "https://starship.rs"
 documentation = "https://starship.rs/guide/"
@@ -13,7 +13,7 @@ categories = ["command-line-utilities"]
 description = """
 The minimal, blazing-fast, and infinitely customizable prompt for any shell! ☄🌌️
 """
-exclude = ["docs/**/*"]
+include = ["src/**/*", "LICENSE", "README.md"]
 
 [lib]
 name = "starship_module_config_derive"

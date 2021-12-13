@@ -2,7 +2,7 @@
 home: true
 heroImage: /logo.svg
 heroText:
-tagline: Минимальная, быстрая и бесконечная настраиваемая командная строка для любой оболочки!
+tagline: Минималистичная, быстрая и бесконечно настраиваемая командная строка для любой оболочки!
 actionText: Начало работы →
 actionLink: ./guide/
 features:
@@ -11,14 +11,14 @@ features:
     details: Работает на большинстве распространенных оболочек и наиболее распространенных операционных системах. Используйте везде!
   - 
     title: Основана на Rust
-    details: Приносит наилучшую в своем классе скорость и безопасность Rust, чтобы сделать вашу подсказку как можно быстрее и надежнее.
+    details: Приносит наилучшую в своем классе скорость и безопасность Rust, чтобы сделать вашу оболочку как можно быстрее и надежнее.
   - 
     title: Настраиваемая
-    details: Каждая маленькая деталь настраивается по вашему вкусу, чтобы сделать эту подсказку минимальной или функциональной, как вы захотите.
+    details: Каждая маленькая деталь настраивается по вашему вкусу, чтобы сделать эту оболочку минималистичной или функциональной, как вы захотите.
 footer: Под лицензией ISC | Авторское право © 2019-настоящее Starship Contributors
 #Used for the description meta tag, for SEO
 metaTitle: "Starship: Cross-Shell Prompt"
-description: Starship - минимальная, быстрая и бесконечная настраиваемая командная строка для любой оболочки! Показывает нужную вам информацию, оставаясь красивой и минималистичной. Быстрая установка доступна для Bash, Fish, ZSH, Ion и PowerShell.
+description: Starship - минимальная, быстрая и бесконечная настраиваемая командная строка для любой оболочки! Показывает нужную вам информацию, оставаясь красивой и минималистичной. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, and PowerShell.
 ---
 
 <div class="center">
@@ -27,6 +27,10 @@ description: Starship - минимальная, быстрая и бесконе
     <source src="/demo.mp4" type="video/mp4">
   </video>
 </div>
+
+### Требования
+
+- A [Nerd Font](https://www.nerdfonts.com/) installed and enabled in your terminal.
 
 ### Быстрая установка
 
@@ -38,8 +42,9 @@ description: Starship - минимальная, быстрая и бесконе
    Через Bash:
 
    ```sh
-   curl -fsSL https://starship.rs/install.sh | bash
+   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
    ```
+   Для обновления Starship перезапустите этот скрипт. Он заменит текущую версию без изменения конфигурации.
 
 
    #### Установить через менеджер пакетов
@@ -94,11 +99,9 @@ description: Starship - минимальная, быстрая и бесконе
 
    #### PowerShell
 
-   Добавьте следующее в конец `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` (или `~/.config/powershell/Microsoft.PowerShell_profile.ps1` на -Nix):
+   Добавьте следующее в конец `Microsoft.PowerShell_profile.ps1`. Вы можете проверить местоположение этого файла, запросив переменную `$PROFILE` в PowerShell. Обычно он находится в `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` или `~/.config/powershell/Microsoft.PowerShell_profile.ps1` на -Nix.
 
    ```sh
-   # ~\Documents\PowerShell\Profile.ps1
-
    Invoke-Expression (&starship init powershell)
    ```
 
@@ -111,4 +114,53 @@ description: Starship - минимальная, быстрая и бесконе
    # ~/.config/ion/initrc
 
    eval $(starship init ion)
+   ```
+
+
+   #### Elvish
+
+   ::: warning Only elvish v0.15 or higher is supported. :::
+
+   Добавьте следующую строку в конец `~/.elvish/rc.elv`:
+
+   ```sh
+   # ~/.elvish/rc.elv
+
+   eval (starship init elvish)
+   ```
+
+
+   #### Tcsh
+
+   Добавьте следующее в конец `~/.tcshrc`:
+
+   ```sh
+   # ~/.tcshrc
+
+   eval `starship init tcsh`
+   ```
+
+
+   #### Nushell
+
+   ::: warning This will change in the future. Only nu version v0.33 or higher is supported. ::: Add the following to your nu config file. You can check the location of this file by running `config path` in nu.
+
+   ```toml
+   startup = [
+    "mkdir ~/.cache/starship",
+    "starship init nu | save ~/.cache/starship/init.nu",
+    "source ~/.cache/starship/init.nu"
+   ]
+   prompt = "starship_prompt"
+   ```
+
+
+   #### Xonsh
+
+   Add the following to the end of `~/.xonshrc`:
+
+   ```sh
+   # ~/.xonshrc
+
+   execx($(starship init xonsh))
    ```

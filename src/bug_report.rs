@@ -1,34 +1,37 @@
-use crate::utils::exec_cmd;
+use crate::shadow;
+use crate::utils::{self, exec_cmd};
 
-use clap::crate_version;
+use directories_next::ProjectDirs;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[cfg(feature = "http")]
 const GIT_IO_BASE_URL: &str = "https://git.io/";
 
 pub fn create() {
+    println!("{}\n", shadow::version().trim());
     let os_info = os_info::get();
 
     let environment = Environment {
         os_type: os_info.os_type(),
-        os_version: os_info.version().to_owned(),
+        os_version: os_info.version().clone(),
         shell_info: get_shell_info(),
         terminal_info: get_terminal_info(),
         starship_config: get_starship_config(),
     };
 
-    let link = make_github_issue_link(crate_version!(), environment);
+    let link = make_github_issue_link(environment);
+    let short_link = shorten_link(&link);
 
     if open::that(&link).is_ok() {
-        print!("Take a look at your browser. A GitHub issue has been populated with your configuration")
+        println!("Take a look at your browser. A GitHub issue has been populated with your configuration.");
+        println!("If your browser has failed to open, please click this link:\n");
     } else {
-        let link = shorten_link(&link).unwrap_or(link);
-        println!(
-            "Click this link to create a GitHub issue populated with your configuration:\n\n  {}",
-            link
-        );
+        println!("Click this link to create a GitHub issue populated with your configuration:\n");
     }
+
+    println!(" {}", short_link.unwrap_or(link));
 }
 
 #[cfg(feature = "http")]
@@ -60,7 +63,14 @@ struct Environment {
     starship_config: String,
 }
 
-fn make_github_issue_link(starship_version: &str, environment: Environment) -> String {
+fn get_pkg_branch_tag() -> &'static str {
+    if !shadow::TAG.is_empty() {
+        return shadow::TAG;
+    }
+    shadow::BRANCH
+}
+
+fn make_github_issue_link(environment: Environment) -> String {
     let body = urlencoding::encode(&format!("#### Current Behavior
 <!-- A clear and concise description of the behavior. -->
 
@@ -78,7 +88,11 @@ fn make_github_issue_link(starship_version: &str, environment: Environment) -> S
 - {shell_name} version: {shell_version}
 - Operating system: {os_name} {os_version}
 - Terminal emulator: {terminal_name} {terminal_version}
-
+- Git Commit Hash: {git_commit_hash}
+- Branch/Tag: {pkg_branch_tag}
+- Rust Version: {rust_version}
+- Rust channel: {rust_channel} {build_rust_channel}
+- Build Time: {build_time}
 #### Relevant Shell Configuration
 
 ```bash
@@ -90,7 +104,7 @@ fn make_github_issue_link(starship_version: &str, environment: Environment) -> S
 ```toml
 {starship_config}
 ```",
-        starship_version = starship_version,
+        starship_version = shadow::PKG_VERSION,
         shell_name = environment.shell_info.name,
         shell_version = environment.shell_info.version,
         terminal_name = environment.terminal_info.name,
@@ -99,6 +113,12 @@ fn make_github_issue_link(starship_version: &str, environment: Environment) -> S
         os_version = environment.os_version,
         shell_config = environment.shell_info.config,
         starship_config = environment.starship_config,
+        git_commit_hash =  shadow::SHORT_COMMIT,
+        pkg_branch_tag =  get_pkg_branch_tag(),
+        rust_version =  shadow::RUST_VERSION,
+        rust_channel =  shadow::RUST_CHANNEL,
+        build_rust_channel =  shadow::BUILD_RUST_CHANNEL,
+        build_time =  shadow::BUILD_TIME,
     ))
         .replace("%20", "+");
 
@@ -131,14 +151,17 @@ fn get_shell_info() -> ShellInfo {
 
     let shell = shell.unwrap();
 
-    let version = exec_cmd(&shell, &["--version"])
-        .map(|output| output.stdout.trim().to_string())
-        .unwrap_or_else(|| UNKNOWN_VERSION.to_string());
+    let version = exec_cmd(&shell, &["--version"], Duration::from_millis(500)).map_or_else(
+        || UNKNOWN_VERSION.to_string(),
+        |output| output.stdout.trim().to_string(),
+    );
 
     let config = get_config_path(&shell)
         .and_then(|config_path| fs::read_to_string(config_path).ok())
-        .map(|config| config.trim().to_string())
-        .unwrap_or_else(|| UNKNOWN_CONFIG.to_string());
+        .map_or_else(
+            || UNKNOWN_CONFIG.to_string(),
+            |config| config.trim().to_string(),
+        );
 
     ShellInfo {
         name: shell,
@@ -169,11 +192,16 @@ fn get_terminal_info() -> TerminalInfo {
 }
 
 fn get_config_path(shell: &str) -> Option<PathBuf> {
-    dirs_next::home_dir().and_then(|home_dir| {
+    if shell == "nu" {
+        return ProjectDirs::from("org", "nushell", "nu")
+            .map(|project_dirs| project_dirs.config_dir().join("config.toml"));
+    }
+
+    utils::home_dir().and_then(|home_dir| {
         match shell {
             "bash" => Some(".bashrc"),
             "fish" => Some(".config/fish/config.fish"),
-            "ion" => Some("~/.config/ion/initrc"),
+            "ion" => Some(".config/ion/initrc"),
             "powershell" => {
                 if cfg!(windows) {
                     Some("Documents/PowerShell/Microsoft.PowerShell_profile.ps1")
@@ -182,6 +210,9 @@ fn get_config_path(shell: &str) -> Option<PathBuf> {
                 }
             }
             "zsh" => Some(".zshrc"),
+            "elvish" => Some(".elvish/rc.elv"),
+            "tcsh" => Some(".tcshrc"),
+            "xonsh" => Some(".xonshrc"),
             _ => None,
         }
         .map(|path| home_dir.join(path))
@@ -193,7 +224,7 @@ fn get_starship_config() -> String {
         .map(PathBuf::from)
         .ok()
         .or_else(|| {
-            dirs_next::home_dir().map(|mut home_dir| {
+            utils::home_dir().map(|mut home_dir| {
                 home_dir.push(".config/starship.toml");
                 home_dir
             })
@@ -209,10 +240,9 @@ mod tests {
 
     #[test]
     fn test_make_github_link() {
-        let starship_version = "0.1.2";
         let environment = Environment {
             os_type: os_info::Type::Linux,
-            os_version: os_info::Version::semantic(1, 2, 3, Some("test".to_string())),
+            os_version: os_info::Version::Semantic(1, 2, 3),
             shell_info: ShellInfo {
                 name: "test_shell".to_string(),
                 version: "2.3.4".to_string(),
@@ -225,9 +255,9 @@ mod tests {
             starship_config: "No Starship config".to_string(),
         };
 
-        let link = make_github_issue_link(starship_version, environment);
+        let link = make_github_issue_link(environment);
 
-        assert!(link.contains(starship_version));
+        assert!(link.contains(clap::crate_version!()));
         assert!(link.contains("Linux"));
         assert!(link.contains("1.2.3"));
         assert!(link.contains("test_shell"));
@@ -237,24 +267,12 @@ mod tests {
     }
 
     #[test]
-    fn test_get_shell_info() {
-        env::remove_var("STARSHIP_SHELL");
-        let unknown_shell = get_shell_info();
-        assert_eq!(UNKNOWN_SHELL, &unknown_shell.name);
-
-        env::set_var("STARSHIP_SHELL", "fish");
-
-        let fish_shell = get_shell_info();
-        assert_eq!("fish", &fish_shell.name);
-    }
-
-    #[test]
     #[cfg(not(windows))]
     fn test_get_config_path() {
-        env::set_var("HOME", "/test/home");
-
         let config_path = get_config_path("bash");
-        assert_eq!("/test/home/.bashrc", config_path.unwrap().to_str().unwrap());
-        env::remove_var("HOME");
+        assert_eq!(
+            utils::home_dir().unwrap().join(".bashrc"),
+            config_path.unwrap()
+        );
     }
 }

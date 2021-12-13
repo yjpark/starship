@@ -1,9 +1,11 @@
-use crate::configs::StarshipRootConfig;
 use crate::utils;
 use ansi_term::{Color, Style};
+use indexmap::IndexMap;
+use serde::Serialize;
 
 use std::clone::Clone;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::marker::Sized;
 
 use std::env;
@@ -12,15 +14,14 @@ use toml::Value;
 /// Root config of a module.
 pub trait RootModuleConfig<'a>
 where
-    Self: ModuleConfig<'a>,
+    Self: ModuleConfig<'a> + Default,
 {
-    /// Create a new root module config with default values.
-    fn new() -> Self;
-
     /// Load root module config from given Value and fill unset variables with default
     /// values.
     fn load(config: &'a Value) -> Self {
-        Self::new().load_config(config)
+        let mut out = Self::default();
+        out.load_config(config);
+        out
     }
 
     /// Helper function that will call RootModuleConfig::load(config) if config is Some,
@@ -29,10 +30,12 @@ where
         if let Some(config) = config {
             Self::load(config)
         } else {
-            Self::new()
+            Self::default()
         }
     }
 }
+
+impl<'a, T: ModuleConfig<'a> + Default> RootModuleConfig<'a> for T {}
 
 /// Parsable config.
 pub trait ModuleConfig<'a>
@@ -45,8 +48,10 @@ where
     }
 
     /// Merge `self` with config from a toml table.
-    fn load_config(&self, config: &'a Value) -> Self {
-        Self::from_config(config).unwrap_or_else(|| self.clone())
+    fn load_config(&mut self, config: &'a Value) {
+        if let Some(value) = Self::from_config(config) {
+            let _ = std::mem::replace(self, value);
+        }
     }
 }
 
@@ -54,6 +59,12 @@ where
 impl<'a> ModuleConfig<'a> for &'a str {
     fn from_config(config: &'a Value) -> Option<Self> {
         config.as_str()
+    }
+}
+
+impl<'a> ModuleConfig<'a> for String {
+    fn from_config(config: &'a Value) -> Option<Self> {
+        config.as_str().map(std::borrow::ToOwned::to_owned)
     }
 }
 
@@ -81,12 +92,12 @@ impl<'a> ModuleConfig<'a> for u64 {
             Value::Integer(value) => {
                 // Converting i64 to u64
                 if *value > 0 {
-                    Some(*value as u64)
+                    Some(*value as Self)
                 } else {
                     None
                 }
             }
-            Value::String(value) => value.parse::<u64>().ok(),
+            Value::String(value) => value.parse::<Self>().ok(),
             _ => None,
         }
     }
@@ -103,12 +114,12 @@ impl<'a> ModuleConfig<'a> for usize {
         match config {
             Value::Integer(value) => {
                 if *value > 0 {
-                    Some(*value as usize)
+                    Some(*value as Self)
                 } else {
                     None
                 }
             }
-            Value::String(value) => value.parse::<usize>().ok(),
+            Value::String(value) => value.parse::<Self>().ok(),
             _ => None,
         }
     }
@@ -133,13 +144,29 @@ where
     S: Clone,
 {
     fn from_config(config: &'a Value) -> Option<Self> {
-        let mut hm = HashMap::default();
+        let mut hm = Self::default();
 
-        for (x, y) in config.as_table()?.iter() {
+        for (x, y) in config.as_table()? {
             hm.insert(x.clone(), T::from_config(y)?);
         }
 
         Some(hm)
+    }
+}
+
+impl<'a, T, S: ::std::hash::BuildHasher + Default> ModuleConfig<'a> for IndexMap<String, T, S>
+where
+    T: ModuleConfig<'a>,
+    S: Clone,
+{
+    fn from_config(config: &'a Value) -> Option<Self> {
+        let mut im = Self::default();
+
+        for (x, y) in config.as_table()? {
+            im.insert(x.clone(), T::from_config(y)?);
+        }
+
+        Some(im)
     }
 }
 
@@ -154,7 +181,7 @@ where
 
 /// A wrapper around `Vec<T>` that implements `ModuleConfig`, and either
 /// accepts a value of type `T` or a list of values of type `T`.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize)]
 pub struct VecOr<T>(pub Vec<T>);
 
 impl<'a, T> ModuleConfig<'a> for VecOr<T>
@@ -163,7 +190,7 @@ where
 {
     fn from_config(config: &'a Value) -> Option<Self> {
         if let Some(item) = T::from_config(config) {
-            return Some(VecOr(vec![item]));
+            return Some(Self(vec![item]));
         }
 
         let vec = config
@@ -172,7 +199,7 @@ where
             .map(|value| T::from_config(value))
             .collect::<Option<Vec<T>>>()?;
 
-        Some(VecOr(vec))
+        Some(Self(vec))
     }
 }
 
@@ -185,11 +212,11 @@ impl StarshipConfig {
     /// Initialize the Config struct
     pub fn initialize() -> Self {
         if let Some(file_data) = Self::config_from_file() {
-            StarshipConfig {
+            Self {
                 config: Some(file_data),
             }
         } else {
-            StarshipConfig {
+            Self {
                 config: Some(Value::Table(toml::value::Table::new())),
             }
         }
@@ -199,12 +226,12 @@ impl StarshipConfig {
     fn config_from_file() -> Option<Value> {
         let file_path = if let Ok(path) = env::var("STARSHIP_CONFIG") {
             // Use $STARSHIP_CONFIG as the config path if available
-            log::debug!("STARSHIP_CONFIG is set: \n{}", &path);
+            log::debug!("STARSHIP_CONFIG is set: {}", &path);
             path
         } else {
             // Default to using ~/.config/starship.toml
             log::debug!("STARSHIP_CONFIG is not set");
-            let config_path = dirs_next::home_dir()?.join(".config/starship.toml");
+            let config_path = utils::home_dir()?.join(".config/starship.toml");
             let config_path_str = config_path.to_str()?.to_owned();
             log::debug!("Using default config path: {}", config_path_str);
             config_path_str
@@ -212,22 +239,28 @@ impl StarshipConfig {
 
         let toml_content = match utils::read_file(&file_path) {
             Ok(content) => {
-                log::trace!("Config file content: \n{}", &content);
+                log::trace!("Config file content: \"\n{}\"", &content);
                 Some(content)
             }
             Err(e) => {
-                log::debug!("Unable to read config file content: \n{}", &e);
+                let level = if e.kind() == ErrorKind::NotFound {
+                    log::Level::Debug
+                } else {
+                    log::Level::Error
+                };
+
+                log::log!(level, "Unable to read config file content: {}", &e);
                 None
             }
         }?;
 
         match toml::from_str(&toml_content) {
             Ok(parsed) => {
-                log::debug!("Config parsed: \n{:?}", &parsed);
+                log::debug!("Config parsed: {:?}", &parsed);
                 Some(parsed)
             }
             Err(error) => {
-                log::debug!("Unable to parse the config file: {}", error);
+                log::error!("Unable to parse the config file: {}", error);
                 None
             }
         }
@@ -238,7 +271,7 @@ impl StarshipConfig {
         let module_config = self.get_config(&[module_name]);
         if module_config.is_some() {
             log::debug!(
-                "Config found for \"{}\": \n{:?}",
+                "Config found for \"{}\": {:?}",
                 &module_name,
                 &module_config
             );
@@ -302,7 +335,7 @@ impl StarshipConfig {
         let module_config = self.get_config(&["custom", module_name]);
         if module_config.is_some() {
             log::debug!(
-                "Custom config found for \"{}\": \n{:?}",
+                "Custom config found for \"{}\": {:?}",
                 &module_name,
                 &module_config
             );
@@ -314,13 +347,9 @@ impl StarshipConfig {
     pub fn get_custom_modules(&self) -> Option<&toml::value::Table> {
         self.get_config(&["custom"])?.as_table()
     }
-
-    pub fn get_root_config(&self) -> StarshipRootConfig {
-        if let Some(root_config) = &self.config {
-            StarshipRootConfig::load(root_config)
-        } else {
-            StarshipRootConfig::new()
-        }
+    /// Get the table of all the registered env_var modules, if any
+    pub fn get_env_var_modules(&self) -> Option<&toml::value::Table> {
+        self.get_config(&["env_var"])?.as_table()
     }
 }
 
@@ -331,7 +360,8 @@ impl StarshipConfig {
  - 'underline'
  - 'bold'
  - 'italic'
- - '<color>'        (see the parse_color_string doc for valid color strings)
+ - 'inverted'
+ - '<color>'       (see the parse_color_string doc for valid color strings)
 */
 pub fn parse_style_string(style_string: &str) -> Option<ansi_term::Style> {
     style_string
@@ -355,16 +385,32 @@ pub fn parse_style_string(style_string: &str) -> Option<ansi_term::Style> {
                     "bold" => Some(style.bold()),
                     "italic" => Some(style.italic()),
                     "dimmed" => Some(style.dimmed()),
-                    "none" => None,
-
-                    // Try to see if this token parses as a valid color string
-                    color_string => parse_color_string(color_string).map(|ansi_color| {
-                        if col_fg {
-                            style.fg(ansi_color)
+                    "inverted" => Some(style.reverse()),
+                    // When the string is supposed to be a color:
+                    // Decide if we yield none, reset background or set color.
+                    color_string => {
+                        if color_string == "none" && col_fg {
+                            None // fg:none yields no style.
                         } else {
-                            style.on(ansi_color)
+                            // Either bg or valid color or both.
+                            let parsed = parse_color_string(color_string);
+                            // bg + invalid color = reset the background to default.
+                            if !col_fg && parsed.is_none() {
+                                let mut new_style = style;
+                                new_style.background = Option::None;
+                                Some(new_style)
+                            } else {
+                                // Valid color, apply color to either bg or fg
+                                parsed.map(|ansi_color| {
+                                    if col_fg {
+                                        style.fg(ansi_color)
+                                    } else {
+                                        style.on(ansi_color)
+                                    }
+                                })
+                            }
                         }
-                    }),
+                    }
                 }
             })
         })
@@ -438,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_load_config() {
-        #[derive(Clone, ModuleConfig)]
+        #[derive(Clone, Default, ModuleConfig)]
         struct TestConfig<'a> {
             pub symbol: &'a str,
             pub disabled: bool,
@@ -450,27 +496,27 @@ mod tests {
             disabled = true
             some_array = ["A"]
         };
-        let default_config = TestConfig {
+        let mut rust_config = TestConfig {
             symbol: "S ",
             disabled: false,
             some_array: vec!["A", "B", "C"],
         };
-        let rust_config = default_config.load_config(&config);
+        rust_config.load_config(&config);
 
         assert_eq!(rust_config.symbol, "T ");
-        assert_eq!(rust_config.disabled, true);
+        assert!(rust_config.disabled);
         assert_eq!(rust_config.some_array, vec!["A"]);
     }
 
     #[test]
     fn test_load_nested_config() {
-        #[derive(Clone, ModuleConfig)]
+        #[derive(Clone, Default, ModuleConfig)]
         struct TestConfig<'a> {
             pub untracked: SegmentDisplayConfig<'a>,
             pub modified: SegmentDisplayConfig<'a>,
         }
 
-        #[derive(PartialEq, Debug, Clone, ModuleConfig)]
+        #[derive(PartialEq, Debug, Clone, Default, ModuleConfig)]
         struct SegmentDisplayConfig<'a> {
             pub value: &'a str,
             pub style: Style,
@@ -481,7 +527,7 @@ mod tests {
             modified = { value = "•", style = "red" }
         };
 
-        let default_config = TestConfig {
+        let mut git_status_config = TestConfig {
             untracked: SegmentDisplayConfig {
                 value: "?",
                 style: Color::Red.bold(),
@@ -491,7 +537,7 @@ mod tests {
                 style: Color::Red.bold(),
             },
         };
-        let git_status_config = default_config.load_config(&config);
+        git_status_config.load_config(&config);
 
         assert_eq!(
             git_status_config.untracked,
@@ -511,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_load_optional_config() {
-        #[derive(Clone, ModuleConfig)]
+        #[derive(Clone, Default, ModuleConfig)]
         struct TestConfig<'a> {
             pub optional: Option<&'a str>,
             pub hidden: Option<&'a str>,
@@ -520,11 +566,11 @@ mod tests {
         let config = toml::toml! {
             optional = "test"
         };
-        let default_config = TestConfig {
+        let mut rust_config = TestConfig {
             optional: None,
             hidden: None,
         };
-        let rust_config = default_config.load_config(&config);
+        rust_config.load_config(&config);
 
         assert_eq!(rust_config.optional, Some("test"));
         assert_eq!(rust_config.hidden, None);
@@ -532,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_load_enum_config() {
-        #[derive(Clone, ModuleConfig)]
+        #[derive(Clone, Default, ModuleConfig)]
         struct TestConfig {
             pub switch_a: Switch,
             pub switch_b: Switch,
@@ -541,15 +587,21 @@ mod tests {
 
         #[derive(Debug, PartialEq, Clone)]
         enum Switch {
-            ON,
-            OFF,
+            On,
+            Off,
+        }
+
+        impl Default for Switch {
+            fn default() -> Self {
+                Self::Off
+            }
         }
 
         impl<'a> ModuleConfig<'a> for Switch {
             fn from_config(config: &'a Value) -> Option<Self> {
                 match config.as_str()? {
-                    "on" => Some(Self::ON),
-                    "off" => Some(Self::OFF),
+                    "on" => Some(Self::On),
+                    "off" => Some(Self::Off),
                     _ => None,
                 }
             }
@@ -559,16 +611,16 @@ mod tests {
             switch_a = "on"
             switch_b = "any"
         };
-        let default_config = TestConfig {
-            switch_a: Switch::OFF,
-            switch_b: Switch::OFF,
-            switch_c: Switch::OFF,
+        let mut rust_config = TestConfig {
+            switch_a: Switch::Off,
+            switch_b: Switch::Off,
+            switch_c: Switch::Off,
         };
-        let rust_config = default_config.load_config(&config);
+        rust_config.load_config(&config);
 
-        assert_eq!(rust_config.switch_a, Switch::ON);
-        assert_eq!(rust_config.switch_b, Switch::OFF);
-        assert_eq!(rust_config.switch_c, Switch::OFF);
+        assert_eq!(rust_config.switch_a, Switch::On);
+        assert_eq!(rust_config.switch_b, Switch::Off);
+        assert_eq!(rust_config.switch_c, Switch::Off);
     }
 
     #[test]
@@ -580,7 +632,7 @@ mod tests {
     #[test]
     fn test_from_bool() {
         let config = Value::Boolean(true);
-        assert_eq!(<bool>::from_config(&config).unwrap(), true);
+        assert!(<bool>::from_config(&config).unwrap());
     }
 
     #[test]
@@ -626,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn table_get_styles_bold_italic_underline_green_dimmy_silly_caps() {
+    fn table_get_styles_bold_italic_underline_green_dimmed_silly_caps() {
         let config = Value::from("bOlD ItAlIc uNdErLiNe GrEeN diMMeD");
         let mystyle = <Style>::from_config(&config).unwrap();
         assert!(mystyle.is_bold);
@@ -640,6 +692,27 @@ mod tests {
                 .italic()
                 .underline()
                 .dimmed()
+                .fg(Color::Green)
+        );
+    }
+
+    #[test]
+    fn table_get_styles_bold_italic_underline_green_dimmed_inverted_silly_caps() {
+        let config = Value::from("bOlD ItAlIc uNdErLiNe GrEeN diMMeD InVeRTed");
+        let mystyle = <Style>::from_config(&config).unwrap();
+        assert!(mystyle.is_bold);
+        assert!(mystyle.is_italic);
+        assert!(mystyle.is_underline);
+        assert!(mystyle.is_dimmed);
+        assert!(mystyle.is_reverse);
+        assert_eq!(
+            mystyle,
+            ansi_term::Style::new()
+                .bold()
+                .italic()
+                .underline()
+                .dimmed()
+                .reverse()
                 .fg(Color::Green)
         );
     }
@@ -662,6 +735,37 @@ mod tests {
         // Test a string that's nullified by `none` at the start
         let config = Value::from("none fg:red bg:green bold");
         assert!(<Style>::from_config(&config).is_none());
+    }
+
+    #[test]
+    fn table_get_styles_with_none() {
+        // Test that none on the end will result in None, overriding bg:none
+        let config = Value::from("fg:red bg:none none");
+        assert!(<Style>::from_config(&config).is_none());
+
+        // Test that none in front will result in None, overriding bg:none
+        let config = Value::from("none fg:red bg:none");
+        assert!(<Style>::from_config(&config).is_none());
+
+        // Test that none in the middle will result in None, overriding bg:none
+        let config = Value::from("fg:red none bg:none");
+        assert!(<Style>::from_config(&config).is_none());
+
+        // Test that fg:none will result in None
+        let config = Value::from("fg:none bg:black");
+        assert!(<Style>::from_config(&config).is_none());
+
+        // Test that bg:none will yield a style
+        let config = Value::from("fg:red bg:none");
+        assert_eq!(<Style>::from_config(&config).unwrap(), Color::Red.normal());
+
+        // Test that bg:none will yield a style
+        let config = Value::from("fg:red bg:none bold");
+        assert_eq!(<Style>::from_config(&config).unwrap(), Color::Red.bold());
+
+        // Test that bg:none will overwrite the previous background colour
+        let config = Value::from("fg:red bg:green bold bg:none");
+        assert_eq!(<Style>::from_config(&config).unwrap(), Color::Red.bold());
     }
 
     #[test]

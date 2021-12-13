@@ -1,6 +1,6 @@
 # 高级配置
 
-Starship 功能繁多，有时您必须在编辑 `starship.toml` 之外做更多工作才能实现某些效果。 此页面详细介绍了一些在 starship 中使用的高级配置技巧。
+`Starship 功能繁多，有时您必须在编辑 <code>starship.toml` 之外做更多工作才能实现某些效果。 此页面详细介绍了一些在 starship 中使用的高级配置技巧。
 
 ::: warning
 
@@ -10,7 +10,7 @@ Starship 功能繁多，有时您必须在编辑 `starship.toml` 之外做更多
 
 ## 在 Bash 中自定义预提示和预执行命令
 
-Bash 没有像大多数其它 shell 一样的正式预执行/预命令框架。 因此，很难在 `bash` 中提供完全可自定义的 hook 机制。 然而，Starship 确实能使您有限地在提示符渲染过程中插入自己的函数执行：
+Bash 并没有类似大多数其它 shell 的正式预执行/预命令框架。 因此，很难在 `bash` 中提供完全可自定义的 hook 机制。 然而，Starship 确实能使您有限地在提示符渲染过程中插入自己的函数执行：
 
 - 若要在提示符显示之前运行自定义函数，需要定义此函数，然后将函数名赋值给 `starship_reserved_user_func`。 例如，要在提示符之前绘制一枚火箭，您应该写
 
@@ -31,11 +31,23 @@ trap blastoff DEBUG     # 启动 starship *之前* 设置 DEBUG trap
 eval $(starship init bash)
 ```
 
-## 更改窗口标题
+## Custom pre-prompt and pre-execution Commands in PowerShell
 
-一些 shell 提示符会自动更改您的窗口标题（比如改成您的工作目录）。 Fish 甚至默认会执行此功能。 Starship 没有实现此功能，但将这个功能添加到 `bash` 或 `zsh` 是相当简单的。
+PowerShell does not have a formal preexec/precmd framework like most other shells. Because of this, it is difficult to provide fully customizable hooks in `powershell`. 然而，Starship 确实能使您有限地在提示符渲染过程中插入自己的函数执行：
 
-首先，定义窗口标题更改函数（在 bash 和 zsh 中相同）：
+Create a function named `Invoke-Starship-PreCommand`
+
+```powershell
+function Invoke-Starship-PreCommand {
+    $host.ui.Write("🚀")
+}
+```
+
+## Change Window Title
+
+Some shell prompts will automatically change the window title for you (e.g. to reflect your working directory). Fish even does it by default. Starship does not do this, but it's fairly straightforward to add this functionality to `bash` or `zsh`.
+
+First, define a window title change function (identical in bash and zsh):
 
 ```bash
 function set_win_title(){
@@ -43,15 +55,15 @@ function set_win_title(){
 }
 ```
 
-您可以使用变量来定制标题（常用的有 `$USER`，`$HOSTNAME` 和 `$PWD`）。
+You can use variables to customize this title (`$USER`, `$HOSTNAME`, and `$PWD` are popular choices).
 
-在 `bash` 中，设置此函数为 starship 预执行函数：
+In `bash`, set this function to be the precmd starship function:
 
 ```bash
 starship_precmd_user_func="set_win_title"
 ```
 
-在 `zsh`中，将此函数添加到 `reservmd_functions` 列表：
+In `zsh`, add this to the `precmd_functions` array:
 
 ```bash
 precmd_functions+=(set_win_title)
@@ -63,31 +75,71 @@ For example, if you want to display your current directory in your terminal tab 
 
 ```bash
 function set_win_title(){
-    echo -ne "\033]0; $(basename $PWD) \007"
+    echo -ne "\033]0; $(basename "$PWD") \007"
 }
 starship_precmd_user_func="set_win_title"
 ```
 
+You can also set a similar output with PowerShell by creating a function named `Invoke-Starship-PreCommand`.
+
+```powershell
+# edit $PROFILE
+function Invoke-Starship-PreCommand {
+  $host.ui.Write("`e]0; PS> $env:USERNAME@$env:COMPUTERNAME`: $pwd `a")
+}
+
+Invoke-Expression (&starship init powershell)
+```
+
+## Enable Right Prompt
+
+Some shells support a right prompt which renders on the same line as the input. Starship can set the content of the right prompt using the `right_format` option. Any module that can be used in `format` is also supported in `right_format`. The `$all` variable will only contain modules not explicitly used in either `format` or `right_format`.
+
+Note: The right prompt is a single line following the input location. To right align modules above the input line in a multi-line prompt, see the [fill module](/config/#fill).
+
+`right_format` is currently supported for the following shells: elvish, fish, zsh.
+
+### 示例
+
+```toml
+# ~/.config/starship.toml
+
+# A minimal left prompt
+format = """$character"""
+
+# move the rest of the prompt to the right
+right_format = """$all"""
+```
+
+Produces a prompt like the following:
+
+```
+▶                                   starship on  rprompt [!] is 📦 v0.57.0 via 🦀 v1.54.0 took 17s
+```
+
+
 ## 样式设定
 
-样式字符串是用空格分隔的单词列表。 其中单词不是大小写敏感的（例如 `bold` 和 `BoLd` 被视为同一字符串）。 每个单词可以是以下之一：
+Style strings are a list of words, separated by whitespace. The words are not case sensitive (i.e. `bold` and `BoLd` are considered the same string). Each word can be one of the following:
 
   - `bold`
+  - `italic`
   - `underline`
   - `dimmed`
+  - `inverted`
   - `bg:<color>`
   - `fg:<color>`
   - `<color>`
   - `none`
 
-`<color>` 是颜色说明符（下面解释）。 `fg:<color>` 和 `<color>` 当前产生一样的效果，尽管未来可能会改变。 字符串中的单词顺序不影响显示结果。
+where `<color>` is a color specifier (discussed below). `fg:<color>` and `<color>` currently do the same thing, though this may change in the future. `inverted` swaps the background and foreground colors. The order of words in the string does not matter.
 
-`none` 标识符会覆盖字符串中所有其他标识符，比如 `fg:red none fg:blue` 将创建一个没有样式设置的字符串。 未来可能会将 `none` 与其它标识符一起使用视为一种错误。
+The `none` token overrides all other tokens in a string if it is not part of a `bg:` specifier, so that e.g. `fg:red none fg:blue` will still create a string with no styling. `bg:none` sets the background to the default color so `fg:red bg:none` is equivalent to `red` or `fg:red` and `bg:green fg:red bg:none` is also equivalent to `fg:red` or `red`. It may become an error to use `none` in conjunction with other tokens in the future.
 
-颜色说明符可以是以下内容之一：
+A color specifier can be one of the following:
 
  - 标准终端颜色之一：`black`，`red`，`green`，`blue`，`yellow`，`purple`，`cyan`，`white`。 您可以使用可选前缀 `bright-` 来获取明亮版本的颜色（例如，`bright-white`）。
  - 一个 `#` 后跟一个六位十六进制数。 这将指定一个 [十六进制 RGB 颜色代码](https://www.w3schools.com/colors/colors_hexadecimal.asp)。
  - 0-255 之间的数字。 这将指定一个 [8 位 ANSI 颜色码](https://i.stack.imgur.com/KTSQa.png)。
 
-如果为文本/背景指定了多个颜色，字符串中最后指定的颜色将具有最高优先级。
+If multiple colors are specified for foreground/background, the last one in the string will take priority.

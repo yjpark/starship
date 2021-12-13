@@ -42,6 +42,12 @@ description: |
 
   `Invoke-Expression (&starship init powershell)`
 
+  ### Xonsh
+
+  Add the following to the end of ~/.xonshrc:
+
+  execx($(starship init xonsh))
+
 grade: stable
 confinement: strict
 
@@ -76,5 +82,9 @@ apps:
       - removable-media
 
 architectures:
-  - build-on: i386
   - build-on: amd64
+  - build-on: arm64
+  - build-on: armhf
+  - build-on: i386
+  - build-on: ppc64el
+  - build-on: s390x

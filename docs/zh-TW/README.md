@@ -2,23 +2,23 @@
 home: true
 heroImage: /logo.svg
 heroText:
-tagline: The minimal, blazing-fast, and infinitely customizable prompt for any shell!
-actionText: Get Started →
+tagline: 適合任何 shell 的最小、極速、無限客製化的提示字元！
+actionText: 馬上開始 →
 actionLink: ./guide/
 features:
   - 
     title: 兼容性優先
-    details: 能夠在最常見的作業系統之中最常見的 shell 上運作。 到處使用它吧！
+    details: 能夠在最常見的作業系統之中最常見的 shell 上運作。 在各處使用它吧！
   - 
-    title: 由 Rust 支持
-    details: 帶來同類最快速度以及 Rust 的安全性，讓你的提示字元盡可能快速與可靠。
+    title: 以 Rust 開發
+    details: 帶來同類中最快的速度以及 Rust 的安全性，讓你的提示字元盡可能快速與可靠。
   - 
     title: 可客製化
     details: 任何些微的細節都可以隨你喜愛地客製化，讓你的提示字元可以隨你所欲地最小化或是充滿各種特色。
 footer: ISC Licensed | Copyright © 2019-present Starship Contributors
 #Used for the description meta tag, for SEO
-metaTitle: "Starship: Cross-Shell Prompt"
-description: Starship is the minimal, blazing fast, and extremely customizable prompt for any shell! Shows the information you need, while staying sleek and minimal. Quick installation available for Bash, Fish, ZSH, Ion, and PowerShell.
+metaTitle: "Starship：跨 Shell 提示字元"
+description: Starship 是適合任何 shell 的最小、極速、高度客製化的提示字元！ 顯示你需要的訊息，同時保持順暢與最小化。 針對 Bash、Fish、ZSH、Ion、Tcsh、Elvish、Nu、Xonsh 以及 Powershell 有快速安裝可供使用。
 ---
 
 <div class="center">
@@ -28,29 +28,34 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
   </video>
 </div>
 
+### 先決要求
+
+- 安裝至少一個 [Nerd Font](https://www.nerdfonts.com/) 字體，並在終端中啟用。
+
 ### 快速安裝
 
 1. 安裝 **starship** 執行檔：
 
 
-   #### Install Latest Version
+   #### 安裝最新版本
 
-   With Shell:
+   使用 Shell 安裝：
 
    ```sh
-   curl -fsSL https://starship.rs/install.sh | bash
+   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
    ```
+   如果想更新已安裝的 Starship，請重新執行上述指令。 指令只會更新 Starship 執行檔本身，不會影響到任何已撰寫的設定檔。
 
 
-   #### Install via Package Manager
+   #### 使用套件管理器安裝：
 
-   With [Homebrew](https://brew.sh/):
+   使用 [Homebrew](https://brew.sh/)：
 
    ```sh
    brew install starship
    ```
 
-   With [Scoop](https://scoop.sh):
+   使用 [Scoop](https://scoop.sh)：
 
    ```powershell
    scoop install starship
@@ -94,21 +99,68 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Powershell
 
-   將以下內容放到 `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` 的結尾 (或是在 -Nix 上的 `~/.config/powershell/Microsoft.PowerShell_profile.ps1`)：
+   將以下內容放到 `Microsoft.PowerShell_profile.ps1` 的結尾。 你可以藉由在 PowerShell 查詢 `$PROFILE` 變數以取得這個檔案的位置。 一般來說，檔案會出現在 `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`，若是在 -Nix 上，檔案則會出現在 `~/.config/powershell/Microsoft.PowerShell_profile.ps1`。
 
    ```sh
-   # ~\Documents\PowerShell\Profile.ps1
-
    Invoke-Expression (&starship init powershell)
    ```
 
 
    #### Ion
 
-   Add the following to the end of `~/.config/ion/initrc`:
+   將以下內容放到 `~/.config/ion/initrc` 的結尾：
 
    ```sh
    # ~/.config/ion/initrc
 
    eval $(starship init ion)
+   ```
+
+
+   #### Elvish
+
+   ::: warning 只有 elvish v0.15 或以上版本才有支援 :::
+
+   將以下內容放到 `~/.elvish/rc.elv` 的結尾：
+
+   ```sh
+   # ~/.elvish/rc.elv
+
+   eval (starship init elvish)
+   ```
+
+
+   #### Tcsh
+
+   將以下內容放到 `~/.tcshrc` 的結尾：
+
+   ```sh
+   # ~/.tcshrc
+
+   eval `starship init tcsh`
+   ```
+
+
+   #### Nushell
+
+   ::: warning 這項設定可能在未來改變 只支援 nu v0.33 以上的版本。 ::: 將以下內容放到你的 nu 設定檔裡， 你可以透過在 nu 執行 `config path` 指令來取得設定檔的位置。
+
+   ```toml
+   startup = [
+    "mkdir ~/.cache/starship",
+    "starship init nu | save ~/.cache/starship/init.nu",
+    "source ~/.cache/starship/init.nu"
+   ]
+   prompt = "starship_prompt"
+   ```
+
+
+   #### Xonsh
+
+   將以下內容放到 `~/.xonshrc` 的結尾：
+
+   ```sh
+   # ~/.xonshrc
+
+   execx($(starship init xonsh))
    ```

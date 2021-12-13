@@ -2,26 +2,22 @@ use super::{Context, Module, RootModuleConfig};
 
 use crate::configs::nim::NimConfig;
 use crate::formatter::StringFormatter;
-use crate::utils;
+use crate::formatter::VersionFormatter;
 
 /// Creates a module with the current Nim version
-///
-/// Will display the Nim version if any of the following criteria are met:
-///     - The current directory contains a file with extension `.nim`, `.nims`, or `.nimble`
-///     - The current directory contains a `nim.cfg` file
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
+    let mut module = context.new_module("nim");
+    let config = NimConfig::try_load(module.config);
     let is_nim_project = context
         .try_begin_scan()?
-        .set_files(&["nim.cfg"])
-        .set_extensions(&["nim", "nims", "nimble"])
+        .set_files(&config.detect_files)
+        .set_extensions(&config.detect_extensions)
+        .set_folders(&config.detect_files)
         .is_match();
 
     if !is_nim_project {
         return None;
     }
-
-    let mut module = context.new_module("nim");
-    let config = NimConfig::try_load(module.config);
 
     let parsed = StringFormatter::new(config.format).and_then(|formatter| {
         formatter
@@ -34,15 +30,21 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
                 _ => None,
             })
             .map(|variable| match variable {
-                "version" => utils::exec_cmd("nim", &["--version"])
+                "version" => context
+                    .exec_cmd("nim", &["--version"])
                     .map(|command_output| command_output.stdout)
                     .and_then(|nim_version_output| {
-                        Some(format!("v{}", parse_nim_version(&nim_version_output)?))
+                        let nim_version = parse_nim_version(&nim_version_output)?;
+                        VersionFormatter::format_module_version(
+                            module.get_name(),
+                            nim_version,
+                            config.version_format,
+                        )
                     })
                     .map(Ok),
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -62,7 +64,7 @@ fn parse_nim_version(version_cmd_output: &str) -> Option<&str> {
         // First line has the version
         .next()?
         .split(' ')
-        .find(|&s| s.chars().all(|c| c >= '0' && c <= '9' || c == '.'))
+        .find(|&s| s.chars().all(|c| ('0'..='9').contains(&c) || c == '.'))
 }
 
 #[cfg(test)]
@@ -83,8 +85,8 @@ mod tests {
             .iter()
             .any(|&v| parse_nim_version(v).is_some());
 
-        assert_eq!(true, all_some);
-        assert_eq!(true, all_none);
+        assert!(all_some);
+        assert!(all_none);
 
         let sample_nimc_output = "Nim Compiler Version 1.2.0 [Linux: amd64]
             Compiled at 2020-04-03
@@ -111,7 +113,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         File::create(dir.path().join("main.nimble"))?.sync_all()?;
         let actual = ModuleRenderer::new("nim").path(dir.path()).collect();
-        let expected = Some(format!("via {} ", Color::Yellow.bold().paint("👑 v1.2.0")));
+        let expected = Some(format!("via {}", Color::Yellow.bold().paint("👑 v1.2.0 ")));
         assert_eq!(expected, actual);
         dir.close()
     }
@@ -121,7 +123,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         File::create(dir.path().join("main.nim"))?.sync_all()?;
         let actual = ModuleRenderer::new("nim").path(dir.path()).collect();
-        let expected = Some(format!("via {} ", Color::Yellow.bold().paint("👑 v1.2.0")));
+        let expected = Some(format!("via {}", Color::Yellow.bold().paint("👑 v1.2.0 ")));
         assert_eq!(expected, actual);
         dir.close()
     }
@@ -131,7 +133,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         File::create(dir.path().join("main.nims"))?.sync_all()?;
         let actual = ModuleRenderer::new("nim").path(dir.path()).collect();
-        let expected = Some(format!("via {} ", Color::Yellow.bold().paint("👑 v1.2.0")));
+        let expected = Some(format!("via {}", Color::Yellow.bold().paint("👑 v1.2.0 ")));
         assert_eq!(expected, actual);
         dir.close()
     }
@@ -141,7 +143,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         File::create(dir.path().join("cfg.nim"))?.sync_all()?;
         let actual = ModuleRenderer::new("nim").path(dir.path()).collect();
-        let expected = Some(format!("via {} ", Color::Yellow.bold().paint("👑 v1.2.0")));
+        let expected = Some(format!("via {}", Color::Yellow.bold().paint("👑 v1.2.0 ")));
         assert_eq!(expected, actual);
         dir.close()
     }

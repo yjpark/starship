@@ -1,9 +1,11 @@
+use std::env;
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
+use std::time::Instant;
 
 use super::{Context, Module, RootModuleConfig};
 
-use crate::{configs::custom::CustomConfig, formatter::StringFormatter};
+use crate::{configs::custom::CustomConfig, formatter::StringFormatter, utils::create_command};
 
 /// Creates a custom module with some configuration
 ///
@@ -13,24 +15,24 @@ use crate::{configs::custom::CustomConfig, formatter::StringFormatter};
 ///
 /// Finally, the content of the module itself is also set by a command.
 pub fn module<'a>(name: &str, context: &'a Context) -> Option<Module<'a>> {
+    let start: Instant = Instant::now();
     let toml_config = context.config.get_custom_module_config(name).expect(
         "modules::custom::module should only be called after ensuring that the module exists",
     );
     let config = CustomConfig::load(toml_config);
 
-    let mut scan_dir = context.try_begin_scan()?;
-
-    if !config.files.0.is_empty() {
-        scan_dir = scan_dir.set_files(&config.files.0);
-    }
-    if !config.extensions.0.is_empty() {
-        scan_dir = scan_dir.set_extensions(&config.extensions.0);
-    }
-    if !config.directories.0.is_empty() {
-        scan_dir = scan_dir.set_folders(&config.directories.0);
+    if let Some(os) = config.os {
+        if os != env::consts::OS && !(os == "unix" && cfg!(unix)) {
+            return None;
+        }
     }
 
-    let mut is_match = scan_dir.is_match();
+    let mut is_match = context
+        .try_begin_scan()?
+        .set_files(&config.files)
+        .set_extensions(&config.extensions)
+        .set_folders(&config.directories)
+        .is_match();
 
     if !is_match {
         if let Some(when) = config.when {
@@ -44,13 +46,6 @@ pub fn module<'a>(name: &str, context: &'a Context) -> Option<Module<'a>> {
 
     let mut module = Module::new(name, config.description, Some(toml_config));
 
-    let output = exec_command(config.command, &config.shell.0)?;
-
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
     let parsed = StringFormatter::new(config.format).and_then(|formatter| {
         formatter
             .map_meta(|var, _| match var {
@@ -61,23 +56,31 @@ pub fn module<'a>(name: &str, context: &'a Context) -> Option<Module<'a>> {
                 "style" => Some(Ok(config.style)),
                 _ => None,
             })
-            .map(|variable| match variable {
-                // This may result in multiple calls to `get_module_version` when a user have
-                // multiple `$version` variables defined in `format`.
-                "output" => Some(Ok(trimmed)),
+            .map_no_escaping(|variable| match variable {
+                "output" => {
+                    let output = exec_command(config.command, &config.shell.0)?;
+                    let trimmed = output.trim();
+
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(Ok(trimmed.to_string()))
+                    }
+                }
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
-    module.set_segments(match parsed {
-        Ok(segments) => segments,
+    match parsed {
+        Ok(segments) => module.set_segments(segments),
         Err(error) => {
             log::warn!("Error in module `custom.{}`:\n{}", name, error);
-            return None;
         }
-    });
-
+    };
+    let elapsed = start.elapsed();
+    log::trace!("Took {:?} to compute custom module {:?}", elapsed, name);
+    module.duration = elapsed;
     Some(module)
 }
 
@@ -97,7 +100,7 @@ fn get_shell<'a, 'b>(shell_args: &'b [&'a str]) -> (std::borrow::Cow<'a, str>, &
 #[cfg(not(windows))]
 fn shell_command(cmd: &str, shell_args: &[&str]) -> Option<Output> {
     let (shell, shell_args) = get_shell(shell_args);
-    let mut command = Command::new(shell.as_ref());
+    let mut command = create_command(shell.as_ref()).ok()?;
 
     command
         .args(shell_args)
@@ -115,6 +118,7 @@ fn shell_command(cmd: &str, shell_args: &[&str]) -> Option<Output> {
                 "Could not launch command with given shell or STARSHIP_SHELL env variable, retrying with /usr/bin/env sh"
             );
 
+            #[allow(clippy::disallowed_method)]
             Command::new("/usr/bin/env")
                 .arg("sh")
                 .stdin(Stdio::piped())
@@ -138,14 +142,17 @@ fn shell_command(cmd: &str, shell_args: &[&str]) -> Option<Output> {
             Some(std::borrow::Cow::Borrowed(shell_args[0])),
             &shell_args[1..],
         )
-    } else if let Ok(env_shell) = std::env::var("STARSHIP_SHELL") {
+    } else if let Some(env_shell) = std::env::var("STARSHIP_SHELL")
+        .ok()
+        .filter(|s| !cfg!(test) && !s.is_empty())
+    {
         (Some(std::borrow::Cow::Owned(env_shell)), &[] as &[&str])
     } else {
         (None, &[] as &[&str])
     };
 
     if let Some(forced_shell) = shell {
-        let mut command = Command::new(forced_shell.as_ref());
+        let mut command = create_command(forced_shell.as_ref()).ok()?;
 
         command
             .args(shell_args)
@@ -166,7 +173,8 @@ fn shell_command(cmd: &str, shell_args: &[&str]) -> Option<Output> {
         );
     }
 
-    let command = Command::new("cmd.exe")
+    let command = create_command("cmd")
+        .ok()?
         .arg("/C")
         .arg(cmd)
         .stdin(Stdio::piped())

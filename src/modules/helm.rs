@@ -2,25 +2,24 @@ use super::{Context, Module, RootModuleConfig};
 
 use crate::configs::helm::HelmConfig;
 use crate::formatter::StringFormatter;
-use crate::utils;
+use crate::formatter::VersionFormatter;
 
 /// Creates a module with the current Helm version
-///
-/// Will display the Helm version if any of the following criteria are met:
-///     - Current directory contains a `helmfile.yaml` file
-///     - Current directory contains a `Chart.yaml` file
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
+    let mut module = context.new_module("helm");
+    let config = HelmConfig::try_load(module.config);
+
     let is_helm_project = context
         .try_begin_scan()?
-        .set_files(&["helmfile.yaml", "Chart.yaml"])
+        .set_files(&config.detect_files)
+        .set_extensions(&config.detect_extensions)
+        .set_folders(&config.detect_folders)
         .is_match();
 
     if !is_helm_project {
         return None;
     }
 
-    let mut module = context.new_module("helm");
-    let config = HelmConfig::try_load(module.config);
     let parsed = StringFormatter::new(config.format).and_then(|formatter| {
         formatter
             .map_meta(|var, _| match var {
@@ -32,15 +31,22 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
                 _ => None,
             })
             .map(|variable| match variable {
-                "version" => format_helm_version(
-                    &utils::exec_cmd("helm", &["version", "--short", "--client"])?
-                        .stdout
-                        .as_str(),
-                )
-                .map(Ok),
+                "version" => {
+                    let helm_version = parse_helm_version(
+                        &context
+                            .exec_cmd("helm", &["version", "--short", "--client"])?
+                            .stdout,
+                    )?;
+                    VersionFormatter::format_module_version(
+                        module.get_name(),
+                        &helm_version,
+                        config.version_format,
+                    )
+                    .map(Ok)
+                }
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -54,24 +60,23 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     Some(module)
 }
 
-fn format_helm_version(helm_stdout: &str) -> Option<String> {
+fn parse_helm_version(helm_stdout: &str) -> Option<String> {
     // `helm version --short --client` output looks like this:
     // v3.1.1+gafe7058
     // `helm version --short --client` output looks like this for Helm 2:
     // Client: v2.16.9+g8ad7037
-
-    Some(
-        helm_stdout
-            // split into ["v3.1.1","gafe7058"] or ["Client: v3.1.1","gafe7058"]
-            .splitn(2, '+')
-            // return "v3.1.1" or "Client: v3.1.1"
-            .next()?
-            // return "v3.1.1" or " v3.1.1"
-            .trim_start_matches("Client: ")
-            // return "v3.1.1"
-            .trim()
-            .to_owned(),
-    )
+    let version = helm_stdout
+        // split into ("v3.1.1","gafe7058") or ("Client: v3.1.1","gafe7058")
+        .split_once('+')
+        // return "v3.1.1" or "Client: v3.1.1"
+        .map_or(helm_stdout, |x| x.0)
+        // return "v3.1.1" or " v3.1.1"
+        .trim_start_matches("Client: ")
+        // return "v3.1.1"
+        .trim_start_matches('v')
+        .trim()
+        .to_string();
+    Some(version)
 }
 
 #[cfg(test)]
@@ -100,7 +105,7 @@ mod tests {
 
         let actual = ModuleRenderer::new("helm").path(dir.path()).collect();
 
-        let expected = Some(format!("via {} ", Color::White.bold().paint("⎈ v3.1.1")));
+        let expected = Some(format!("via {}", Color::White.bold().paint("⎈ v3.1.1 ")));
         assert_eq!(expected, actual);
         dir.close()
     }
@@ -112,16 +117,16 @@ mod tests {
 
         let actual = ModuleRenderer::new("helm").path(dir.path()).collect();
 
-        let expected = Some(format!("via {} ", Color::White.bold().paint("⎈ v3.1.1")));
+        let expected = Some(format!("via {}", Color::White.bold().paint("⎈ v3.1.1 ")));
         assert_eq!(expected, actual);
         dir.close()
     }
 
     #[test]
-    fn test_format_helm_version() {
+    fn test_parse_helm_version() {
         let helm_2 = "Client: v2.16.9+g8ad7037";
         let helm_3 = "v3.1.1+ggit afe7058";
-        assert_eq!(format_helm_version(helm_2), Some("v2.16.9".to_string()));
-        assert_eq!(format_helm_version(helm_3), Some("v3.1.1".to_string()));
+        assert_eq!(parse_helm_version(helm_2), Some("2.16.9".to_string()));
+        assert_eq!(parse_helm_version(helm_3), Some("3.1.1".to_string()));
     }
 }

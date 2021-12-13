@@ -14,8 +14,6 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
 
     let truncation_symbol = get_first_grapheme(config.truncation_symbol);
 
-    // TODO: Once error handling is implemented, warn the user if their config
-    //       truncation length is nonsensical
     let len = if config.truncation_length <= 0 {
         log::warn!(
             "\"truncation_length\" should be a positive value, found {}",
@@ -27,16 +25,46 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     };
 
     let repo = context.get_repo().ok()?;
-    let branch_name = repo.branch.as_ref()?;
 
-    let mut graphemes: Vec<&str> = branch_name.graphemes(true).collect();
-    let trunc_len = len.min(graphemes.len());
-
-    if trunc_len < graphemes.len() {
-        // The truncation symbol should only be added if we truncate
-        graphemes[trunc_len] = truncation_symbol;
-        graphemes.truncate(trunc_len + 1)
+    if config.only_attached {
+        if let Ok(git_repo) = repo.open() {
+            if git_repo.head_detached().ok()? {
+                return None;
+            }
+        }
     }
+
+    let branch_name = repo.branch.as_ref()?;
+    let mut graphemes: Vec<&str> = branch_name.graphemes(true).collect();
+
+    let mut remote_branch_graphemes: Vec<&str> = Vec::new();
+    let mut remote_name_graphemes: Vec<&str> = Vec::new();
+    if let Some(remote) = repo.remote.as_ref() {
+        if let Some(branch) = &remote.branch {
+            remote_branch_graphemes = branch.graphemes(true).collect()
+        };
+        if let Some(name) = &remote.name {
+            remote_name_graphemes = name.graphemes(true).collect()
+        };
+    }
+
+    // Truncate fields if need be
+    for e in &mut [
+        &mut graphemes,
+        &mut remote_branch_graphemes,
+        &mut remote_name_graphemes,
+    ] {
+        let e = &mut **e;
+        let trunc_len = len.min(e.len());
+        if trunc_len < e.len() {
+            // The truncation symbol should only be added if we truncate
+            e[trunc_len] = truncation_symbol;
+            e.truncate(trunc_len + 1);
+        }
+    }
+
+    let show_remote = config.always_show_remote
+        || (!graphemes.eq(&remote_branch_graphemes) && !remote_branch_graphemes.is_empty());
 
     let parsed = StringFormatter::new(config.format).and_then(|formatter| {
         formatter
@@ -50,9 +78,23 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
             })
             .map(|variable| match variable {
                 "branch" => Some(Ok(graphemes.concat())),
+                "remote_branch" => {
+                    if show_remote && !remote_branch_graphemes.is_empty() {
+                        Some(Ok(remote_branch_graphemes.concat()))
+                    } else {
+                        None
+                    }
+                }
+                "remote_name" => {
+                    if show_remote && !remote_name_graphemes.is_empty() {
+                        Some(Ok(remote_name_graphemes.concat()))
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -76,9 +118,9 @@ fn get_first_grapheme(text: &str) -> &str {
 mod tests {
     use ansi_term::Color;
     use std::io;
-    use std::process::Command;
 
     use crate::test::{fixture_repo, FixtureProvider, ModuleRenderer};
+    use crate::utils::create_command;
 
     #[test]
     fn show_nothing_on_empty_dir() -> io::Result<()> {
@@ -199,8 +241,8 @@ mod tests {
             "",
             format!(
                 "branch: {} {} ",
-                Color::Blue.bold().paint("1337_hello_world").to_string(),
-                Color::Red.paint("THE COLORS").to_string()
+                Color::Blue.bold().paint("1337_hello_world"),
+                Color::Red.paint("THE COLORS")
             ),
         )
     }
@@ -214,10 +256,7 @@ mod tests {
             symbol = "git: "
             style = "green"
         "#,
-            format!(
-                "git: {}",
-                Color::Green.paint("1337_hello_world").to_string(),
-            ),
+            format!("git: {}", Color::Green.paint("1337_hello_world"),),
         )
     }
 
@@ -225,12 +264,90 @@ mod tests {
     fn test_works_with_unborn_default_branch() -> io::Result<()> {
         let repo_dir = tempfile::tempdir()?;
 
-        Command::new("git")
+        create_command("git")?
             .args(&["init"])
             .current_dir(&repo_dir)
             .output()?;
 
-        Command::new("git")
+        create_command("git")?
+            .args(&["symbolic-ref", "HEAD", "refs/heads/main"])
+            .current_dir(&repo_dir)
+            .output()?;
+
+        let actual = ModuleRenderer::new("git_branch")
+            .path(&repo_dir.path())
+            .collect();
+
+        let expected = Some(format!(
+            "on {} ",
+            Color::Purple.bold().paint(format!("\u{e0a0} {}", "main")),
+        ));
+
+        assert_eq!(expected, actual);
+        repo_dir.close()
+    }
+
+    #[test]
+    fn test_render_branch_only_attached_on_branch() -> io::Result<()> {
+        let repo_dir = fixture_repo(FixtureProvider::Git)?;
+
+        create_command("git")?
+            .args(&["checkout", "-b", "test_branch"])
+            .current_dir(repo_dir.path())
+            .output()?;
+
+        let actual = ModuleRenderer::new("git_branch")
+            .config(toml::toml! {
+                [git_branch]
+                    only_attached = true
+            })
+            .path(&repo_dir.path())
+            .collect();
+
+        let expected = Some(format!(
+            "on {} ",
+            Color::Purple
+                .bold()
+                .paint(format!("\u{e0a0} {}", "test_branch")),
+        ));
+
+        assert_eq!(expected, actual);
+        repo_dir.close()
+    }
+
+    #[test]
+    fn test_render_branch_only_attached_on_detached() -> io::Result<()> {
+        let repo_dir = fixture_repo(FixtureProvider::Git)?;
+
+        create_command("git")?
+            .args(&["checkout", "@~1"])
+            .current_dir(&repo_dir.path())
+            .output()?;
+
+        let actual = ModuleRenderer::new("git_branch")
+            .config(toml::toml! {
+                [git_branch]
+                    only_attached = true
+            })
+            .path(&repo_dir.path())
+            .collect();
+
+        let expected = None;
+
+        assert_eq!(expected, actual);
+        repo_dir.close()
+    }
+
+    #[test]
+    fn test_works_in_bare_repo() -> io::Result<()> {
+        let repo_dir = tempfile::tempdir()?;
+
+        create_command("git")?
+            .args(&["init", "--bare"])
+            .current_dir(&repo_dir)
+            .output()?;
+
+        create_command("git")?
             .args(&["symbolic-ref", "HEAD", "refs/heads/main"])
             .current_dir(&repo_dir)
             .output()?;
@@ -256,7 +373,7 @@ mod tests {
     // fn test_git_dir_env_variable() -> io::Result<()> {let repo_dir =
     // tempfile::tempdir()?;
 
-    //     Command::new("git")
+    //     create_command("git")?
     //         .args(&["init"])
     //         .current_dir(&repo_dir)
     //         .output()?;
@@ -299,9 +416,9 @@ mod tests {
         truncation_symbol: &str,
         config_options: &str,
     ) -> io::Result<()> {
-        let repo_dir = fixture_repo(FixtureProvider::GIT)?;
+        let repo_dir = fixture_repo(FixtureProvider::Git)?;
 
-        Command::new("git")
+        create_command("git")?
             .args(&["checkout", "-b", branch_name])
             .current_dir(repo_dir.path())
             .output()?;
@@ -338,9 +455,9 @@ mod tests {
         config_options: &str,
         expected: T,
     ) -> io::Result<()> {
-        let repo_dir = fixture_repo(FixtureProvider::GIT)?;
+        let repo_dir = fixture_repo(FixtureProvider::Git)?;
 
-        Command::new("git")
+        create_command("git")?
             .args(&["checkout", "-b", branch_name])
             .current_dir(repo_dir.path())
             .output()?;

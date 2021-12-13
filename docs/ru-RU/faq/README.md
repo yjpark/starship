@@ -10,14 +10,18 @@
   - **Конфигурация**: [matchai's Dotfiles](https://github.com/matchai/dotfiles/blob/b6c6a701d0af8d145a8370288c00bb9f0648b5c2/.config/fish/config.fish)
   - **Подсказка**: [Starship](https://starship.rs/)
 
-## `prompt_order` и `<module>.disabled` - это одно и то же?
+## How do I get command completion as shown in the demo GIF?
+
+Completion support, or autocomplete, is provided by your shell of choice. In the case of the demo, the demo was done with [Fish Shell](https://fishshell.com/), which provides completions by default. If you use Z Shell (zsh), I'd suggest taking a look at [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions).
+
+## Do top level `format` and `<module>.disabled` do the same thing?
 
 Да, они могут быть использованы для отключения модулей в подсказке. Если всё, что вы хотите сделать - это отключить модули, `<module>.disabled` - предпочитаемый способ сделать это по следующим причинам:
 
-- Отключение модулей является более явным, чем удаление их из prompt_order
+- Disabling modules is more explicit than omitting them from the top level `format`
 - Новосозданные модули будут добавлены в подсказку по мере обновления Starship
 
-## В документации написано, что Starship - для многих оболочек, но он не поддерживает оболочку X. Почему?
+## The docs say Starship is cross-shell. Why isn't my preferred shell supported?
 
 Starship устроен так, что есть возможность добавить поддержку практически любой оболочки. Бинарный файл Starship не зависит от оболочки и не имеет состояния, так что если ваша оболочка поддерживает расширение подстрок и настройку подсказки, то Starship может быть использован.
 
@@ -34,7 +38,7 @@ NUM_JOBS=$(jobs -p | wc -l)
 PS1="$(starship prompt --status=$STATUS --jobs=$NUM_JOBS)"
 ```
 
-[Реализация для Bash](https://github.com/starship/starship/blob/master/src/init/starship.bash), встроенная в Starship, несколько сложнее, чтобы предоставить дополнительные возможности, такие как [модуль длительности команды](https://starship.rs/config/#Command-Duration) и обеспечить совместимость Starship с заранее установленными конфигурациями Bash.
+[Реализация для Bash](https://github.com/starship/starship/blob/master/src/init/starship.bash), встроенная в Starship, несколько сложнее, чтобы предоставить дополнительные возможности, такие как [модуль длительности команды](https://starship.rs/config/#command-duration) и обеспечить совместимость Starship с заранее установленными конфигурациями Bash.
 
 Для списка всех флагов, принимаемых `starship prompt`, используйте следующую команду:
 
@@ -46,10 +50,40 @@ starship prompt --help
 
 ## Как запускать Starship на Linux-дистрибутивах с более ранними версиями glibc?
 
-If you get an error like "_version 'GLIBC_2.18' not found (required by starship)_" when using the prebuilt binary (for example, on CentOS 6 or 7), you can use a binary compiled with `musl` instead of `glibc`:
+Если вы получаете ошибку типа "_version 'GLIBC_2.18' not found (required by starship)_" при использовании заранее собранного бинарного файла (например, на CentOS 6 или 7), вы можете использовать бинарный файл, скомпилированый с `musl` вместо `glibc`:
 
 ```sh
-curl -fsSL https://starship.rs/install.sh | bash -s -- --platform unknown-linux-musl
+sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --platform unknown-linux-musl
+```
+
+## Why do I see `Executing command "..." timed out.` warnings?
+
+Starship executes different commands to get information to display in the prompt, for example the version of a program or the current git status. To make sure starship doesn't hang while trying to execute these commands we set a time limit, if a command takes longer than this limit starship will stop the execution of the command and output the above warning, this is expected behaviour. This time limit is configurable using the [`command_timeout` key](/config/#prompt) so if you want you can increase the time limit. You can also follow the debugging steps below to see which command is being slow and see if you can optimise it. Finally you can set the `STARSHIP_LOG` env var to `error` to hide these warnings.
+
+## I see symbols I don't understand or expect, what do they mean?
+
+If you see symbols that you don't recognise you can use `starship explain` to explain the currently showing modules.
+
+## Starship is doing something unexpected, how can I debug it?
+
+You can enable the debug logs by using the `STARSHIP_LOG` env var. These logs can be very verbose so it is often useful to use the `module` command if you are trying to debug a particular module, for example, if you are trying to debug the `rust` module you could run the following command to get the trace logs and output from the module.
+
+```sh
+env STARHIP_LOG=trace starship module rust
+```
+
+If starship is being slow you can try using the `timings` command to see if there is a particular module or command that to blame.
+
+```sh
+env STARHIP_LOG=trace starship timings
+```
+
+This will output the trace log and a breakdown of all modules that either took more than 1ms to execute or produced some output.
+
+Finally if you find a bug you can use the `bug-report` command to create a Github issue.
+
+```sh
+starship bug-report
 ```
 
 ## Why don't I see a glyph symbol in my prompt?
@@ -80,9 +114,9 @@ Starship is just as easy to uninstall as it is to install in the first place.
 
 If Starship was installed using a package manager, please refer to their docs for uninstallation instructions.
 
-If Starship was installed using the `curl | bash` script, the following command will delete the binary:
+If Starship was installed using the install script, the following command will delete the binary:
 
 ```sh
 # Locate and delete the starship binary
-rm "$(which starship)"
+sh -c 'rm "$(which starship)"'
 ```

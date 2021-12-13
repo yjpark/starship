@@ -18,8 +18,12 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     let mut module = context.new_module("hg_branch");
     let config: HgBranchConfig = HgBranchConfig::try_load(module.config);
 
-    // TODO: Once error handling is implemented, warn the user if their config
-    // truncation length is nonsensical
+    // As we default to disabled=true, we have to check here after loading our config module,
+    // before it was only checking against whatever is in the config starship.toml
+    if config.disabled {
+        return None;
+    };
+
     let len = if config.truncation_length <= 0 {
         log::warn!(
             "\"truncation_length\" should be a positive value, found {}",
@@ -56,7 +60,7 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
                 "branch" => Some(Ok(truncated_and_symbol.as_str())),
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -72,8 +76,7 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
 
 fn get_hg_branch_name(ctx: &Context) -> String {
     std::fs::read_to_string(ctx.current_dir.join(".hg").join("branch"))
-        .map(|s| s.trim().into())
-        .unwrap_or_else(|_| "default".to_string())
+        .map_or_else(|_| "default".to_string(), |s| s.trim().into())
 }
 
 fn get_hg_current_bookmark(ctx: &Context) -> Option<String> {
@@ -90,7 +93,7 @@ fn get_graphemes(text: &str, length: usize) -> String {
 }
 
 fn graphemes_len(text: &str) -> usize {
-    UnicodeSegmentation::graphemes(&text[..], true).count()
+    UnicodeSegmentation::graphemes(text, true).count()
 }
 
 #[cfg(test)]
@@ -99,9 +102,9 @@ mod tests {
     use std::fs;
     use std::io;
     use std::path::Path;
-    use std::process::Command;
 
     use crate::test::{fixture_repo, FixtureProvider, ModuleRenderer};
+    use crate::utils::create_command;
 
     enum Expect<'a> {
         BranchName(&'a str),
@@ -127,6 +130,24 @@ mod tests {
 
     #[test]
     #[ignore]
+    fn test_hg_disabled_per_default() -> io::Result<()> {
+        let tempdir = fixture_repo(FixtureProvider::Hg)?;
+        let repo_dir = tempdir.path();
+        run_hg(&["whatever", "blubber"], repo_dir)?;
+        expect_hg_branch_with_config(
+            repo_dir,
+            // no "disabled=false" in config!
+            Some(toml::toml! {
+                [hg_branch]
+                truncation_length = 14
+            }),
+            &[Expect::Empty],
+        );
+        tempdir.close()
+    }
+
+    #[test]
+    #[ignore]
     fn test_hg_get_branch_fails() -> io::Result<()> {
         let tempdir = tempfile::tempdir()?;
 
@@ -138,8 +159,8 @@ mod tests {
         expect_hg_branch_with_config(
             tempdir.path(),
             None,
-            &[Expect::BranchName(&"default"), Expect::NoTruncation],
-        )?;
+            &[Expect::BranchName("default"), Expect::NoTruncation],
+        );
         tempdir.close()
     }
 
@@ -147,30 +168,30 @@ mod tests {
     #[ignore]
     fn test_hg_get_branch_autodisabled() -> io::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        expect_hg_branch_with_config(tempdir.path(), None, &[Expect::Empty])?;
+        expect_hg_branch_with_config(tempdir.path(), None, &[Expect::Empty]);
         tempdir.close()
     }
 
     #[test]
     #[ignore]
     fn test_hg_bookmark() -> io::Result<()> {
-        let tempdir = fixture_repo(FixtureProvider::HG)?;
+        let tempdir = fixture_repo(FixtureProvider::Hg)?;
         let repo_dir = tempdir.path();
-        run_hg(&["bookmark", "bookmark-101"], &repo_dir)?;
+        run_hg(&["bookmark", "bookmark-101"], repo_dir)?;
         expect_hg_branch_with_config(
-            &repo_dir,
+            repo_dir,
             None,
-            &[Expect::BranchName(&"bookmark-101"), Expect::NoTruncation],
-        )?;
+            &[Expect::BranchName("bookmark-101"), Expect::NoTruncation],
+        );
         tempdir.close()
     }
 
     #[test]
     #[ignore]
     fn test_default_truncation_symbol() -> io::Result<()> {
-        let tempdir = fixture_repo(FixtureProvider::HG)?;
+        let tempdir = fixture_repo(FixtureProvider::Hg)?;
         let repo_dir = tempdir.path();
-        run_hg(&["branch", "-f", "branch-name-101"], &repo_dir)?;
+        run_hg(&["branch", "-f", "branch-name-101"], repo_dir)?;
         run_hg(
             &[
                 "commit",
@@ -179,25 +200,26 @@ mod tests {
                 "-u",
                 "fake user <fake@user>",
             ],
-            &repo_dir,
+            repo_dir,
         )?;
         expect_hg_branch_with_config(
-            &repo_dir,
+            repo_dir,
             Some(toml::toml! {
                 [hg_branch]
                 truncation_length = 14
+                disabled = false
             }),
-            &[Expect::BranchName(&"branch-name-10")],
-        )?;
+            &[Expect::BranchName("branch-name-10")],
+        );
         tempdir.close()
     }
 
     #[test]
     #[ignore]
     fn test_configured_symbols() -> io::Result<()> {
-        let tempdir = fixture_repo(FixtureProvider::HG)?;
+        let tempdir = fixture_repo(FixtureProvider::Hg)?;
         let repo_dir = tempdir.path();
-        run_hg(&["branch", "-f", "branch-name-121"], &repo_dir)?;
+        run_hg(&["branch", "-f", "branch-name-121"], repo_dir)?;
         run_hg(
             &[
                 "commit",
@@ -206,31 +228,32 @@ mod tests {
                 "-u",
                 "fake user <fake@user>",
             ],
-            &repo_dir,
+            repo_dir,
         )?;
         expect_hg_branch_with_config(
-            &repo_dir,
+            repo_dir,
             Some(toml::toml! {
                 [hg_branch]
                 symbol = "B "
                 truncation_length = 14
                 truncation_symbol = "%"
+                disabled = false
             }),
             &[
-                Expect::BranchName(&"branch-name-12"),
-                Expect::Symbol(&"B"),
-                Expect::TruncationSymbol(&"%"),
+                Expect::BranchName("branch-name-12"),
+                Expect::Symbol("B"),
+                Expect::TruncationSymbol("%"),
             ],
-        )?;
+        );
         tempdir.close()
     }
 
     #[test]
     #[ignore]
     fn test_configured_style() -> io::Result<()> {
-        let tempdir = fixture_repo(FixtureProvider::HG)?;
+        let tempdir = fixture_repo(FixtureProvider::Hg)?;
         let repo_dir = tempdir.path();
-        run_hg(&["branch", "-f", "branch-name-131"], &repo_dir)?;
+        run_hg(&["branch", "-f", "branch-name-131"], repo_dir)?;
         run_hg(
             &[
                 "commit",
@@ -239,21 +262,22 @@ mod tests {
                 "-u",
                 "fake user <fake@user>",
             ],
-            &repo_dir,
+            repo_dir,
         )?;
 
         expect_hg_branch_with_config(
-            &repo_dir,
+            repo_dir,
             Some(toml::toml! {
                 [hg_branch]
                 style = "underline blue"
+                disabled = false
             }),
             &[
-                Expect::BranchName(&"branch-name-131"),
+                Expect::BranchName("branch-name-131"),
                 Expect::Style(Color::Blue.underline()),
-                Expect::TruncationSymbol(&""),
+                Expect::TruncationSymbol(""),
             ],
-        )?;
+        );
         tempdir.close()
     }
 
@@ -261,12 +285,13 @@ mod tests {
         repo_dir: &Path,
         config: Option<toml::Value>,
         expectations: &[Expect],
-    ) -> io::Result<()> {
+    ) {
         let actual = ModuleRenderer::new("hg_branch")
             .path(repo_dir.to_str().unwrap())
             .config(config.unwrap_or_else(|| {
                 toml::toml! {
                     [hg_branch]
+                    disabled = false
                 }
             }))
             .collect();
@@ -280,7 +305,7 @@ mod tests {
             match expect {
                 Expect::Empty => {
                     assert_eq!(None, actual);
-                    return Ok(());
+                    return;
                 }
                 Expect::Symbol(symbol) => {
                     expect_symbol = symbol;
@@ -306,11 +331,10 @@ mod tests {
             )),
         ));
         assert_eq!(expected, actual);
-        Ok(())
     }
 
     fn run_hg(args: &[&str], repo_dir: &Path) -> io::Result<()> {
-        Command::new("hg")
+        create_command("hg")?
             .args(args)
             .current_dir(&repo_dir)
             .output()?;

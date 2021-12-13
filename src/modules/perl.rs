@@ -2,37 +2,22 @@ use super::{Context, Module, RootModuleConfig};
 
 use crate::configs::perl::PerlConfig;
 use crate::formatter::StringFormatter;
-use crate::utils;
+use crate::formatter::VersionFormatter;
 
 /// Creates a module with the current perl version
-///
-/// Will display the perl version if any of the following criteria are met:
-///     - Current directory contains a `.pl`, `.pm` or a `.pod` file
-///     - Current directory contains a "Makefile.PL", "Build.PL",  "cpanfile", "cpanfile.snapshot",
-///       "META.json", "META.yml", or ".perl-version" file
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
+    let mut module = context.new_module("perl");
+    let config: PerlConfig = PerlConfig::try_load(module.config);
     let is_perl_project = context
         .try_begin_scan()?
-        .set_files(&[
-            "Makefile.PL",
-            "Build.PL",
-            "cpanfile",
-            "cpanfile.snapshot",
-            "META.json",
-            "META.yml",
-            ".perl-version",
-        ])
-        .set_extensions(&["pl", "pm", "pod"])
+        .set_extensions(&config.detect_extensions)
+        .set_files(&config.detect_files)
+        .set_folders(&config.detect_folders)
         .is_match();
 
     if !is_perl_project {
         return None;
     }
-
-    let perl_version = utils::exec_cmd("perl", &["-e", "printf q#%vd#,$^V;"])?.stdout;
-
-    let mut module = context.new_module("perl");
-    let config: PerlConfig = PerlConfig::try_load(module.config);
 
     let parsed = StringFormatter::new(config.format).and_then(|formatter| {
         formatter
@@ -45,10 +30,20 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
                 _ => None,
             })
             .map(|variable| match variable {
-                "version" => Some(Ok(format!("v{}", &perl_version))),
+                "version" => {
+                    let perl_version = context
+                        .exec_cmd("perl", &["-e", "printf q#%vd#,$^V;"])?
+                        .stdout;
+                    VersionFormatter::format_module_version(
+                        module.get_name(),
+                        &perl_version,
+                        config.version_format,
+                    )
+                    .map(Ok)
+                }
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -88,8 +83,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -103,8 +98,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -118,8 +113,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -133,8 +128,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -148,8 +143,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -163,8 +158,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -178,8 +173,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -193,8 +188,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -208,8 +203,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()
@@ -223,8 +218,8 @@ mod tests {
         let actual = ModuleRenderer::new("perl").path(dir.path()).collect();
 
         let expected = Some(format!(
-            "via {} ",
-            Color::Fixed(149).bold().paint("🐪 v5.26.1")
+            "via {}",
+            Color::Fixed(149).bold().paint("🐪 v5.26.1 ")
         ));
         assert_eq!(expected, actual);
         dir.close()

@@ -14,7 +14,7 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     enum ShellEditMode {
         Normal,
         Insert,
-    };
+    }
     const ASSUMED_MODE: ShellEditMode = ShellEditMode::Insert;
     // TODO: extend config to more modes
 
@@ -22,10 +22,8 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     let config: CharacterConfig = CharacterConfig::try_load(module.config);
 
     let props = &context.properties;
-    let exit_code_default = String::from("0");
-    let exit_code = props.get("status_code").unwrap_or(&exit_code_default);
-    let keymap_default = String::from("viins");
-    let keymap = props.get("keymap").unwrap_or(&keymap_default);
+    let exit_code = props.get("status_code").map_or("0", String::as_str);
+    let keymap = props.get("keymap").map_or("viins", String::as_str);
     let exit_success = exit_code == "0";
 
     // Match shell "keymap" names to normalized vi modes
@@ -33,7 +31,7 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
     // Unfortunately, this is also the name of the non-vi default mode.
     // We do some environment detection in src/init.rs to translate.
     // The result: in non-vi fish, keymap is always reported as "insert"
-    let mode = match (&context.shell, keymap.as_str()) {
+    let mode = match (&context.shell, keymap) {
         (Shell::Fish, "default") | (Shell::Zsh, "vicmd") => ShellEditMode::Normal,
         _ => ASSUMED_MODE,
     };
@@ -55,7 +53,7 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
                 "symbol" => Some(symbol),
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -74,10 +72,9 @@ mod test {
     use crate::context::Shell;
     use crate::test::ModuleRenderer;
     use ansi_term::Color;
-    use std::io;
 
     #[test]
-    fn success_status() -> io::Result<()> {
+    fn success_status() {
         let expected = Some(format!("{} ", Color::Green.bold().paint("❯")));
 
         // Status code 0
@@ -87,12 +84,10 @@ mod test {
         // No status code
         let actual = ModuleRenderer::new("character").collect();
         assert_eq!(expected, actual);
-
-        Ok(())
     }
 
     #[test]
-    fn failure_status() -> io::Result<()> {
+    fn failure_status() {
         let expected = Some(format!("{} ", Color::Red.bold().paint("❯")));
 
         let exit_values = [1, 54321, -5000];
@@ -101,12 +96,10 @@ mod test {
             let actual = ModuleRenderer::new("character").status(*status).collect();
             assert_eq!(expected, actual);
         }
-
-        Ok(())
     }
 
     #[test]
-    fn custom_symbol() -> io::Result<()> {
+    fn custom_symbol() {
         let expected_fail = Some(format!("{} ", Color::Red.bold().paint("✖")));
         let expected_success = Some(format!("{} ", Color::Green.bold().paint("➜")));
 
@@ -135,12 +128,10 @@ mod test {
             .status(0)
             .collect();
         assert_eq!(expected_success, actual);
-
-        Ok(())
     }
 
     #[test]
-    fn zsh_keymap() -> io::Result<()> {
+    fn zsh_keymap() {
         let expected_vicmd = Some(format!("{} ", Color::Green.bold().paint("❮")));
         let expected_specified = Some(format!("{} ", Color::Green.bold().paint("V")));
         let expected_other = Some(format!("{} ", Color::Green.bold().paint("❯")));
@@ -169,12 +160,10 @@ mod test {
             .keymap("visual")
             .collect();
         assert_eq!(expected_other, actual);
-
-        Ok(())
     }
 
     #[test]
-    fn fish_keymap() -> io::Result<()> {
+    fn fish_keymap() {
         let expected_vicmd = Some(format!("{} ", Color::Green.bold().paint("❮")));
         let expected_specified = Some(format!("{} ", Color::Green.bold().paint("V")));
         let expected_other = Some(format!("{} ", Color::Green.bold().paint("❯")));
@@ -203,7 +192,5 @@ mod test {
             .keymap("visual")
             .collect();
         assert_eq!(expected_other, actual);
-
-        Ok(())
     }
 }

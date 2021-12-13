@@ -37,7 +37,6 @@ use super::{Context, Module, RootModuleConfig};
 
 use crate::configs::php::PhpConfig;
 use crate::formatter::StringFormatter;
-use crate::utils;
 
 
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
@@ -51,28 +50,29 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
 
 ## External commands
 
-To run a external command (e.g. to get the version of a tool) and to allow for mocking use the `utils::exec_cmd` function. Here's a quick example:
+To run a external command (e.g. to get the version of a tool) and to allow for mocking use the `context.exec_cmd` function. Here's a quick example:
 
 ```rust
 use super::{Context, Module, RootModuleConfig};
 
 use crate::configs::php::PhpConfig;
 use crate::formatter::StringFormatter;
-use crate::utils;
 
 
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
-   // Here `my_env_var` will be either the stdout of the called command or the function
+   // Here `output` will be either the stdout of the called command or the function
    // will exit if the called program was not installed or could not be run.
-   let output = utils::exec_cmd("my_command", &["first_arg", "second_arg"])?.stdout;
+   let output = context.exec_cmd("my_command", &["first_arg", "second_arg"])?.stdout;
 
    // Then you can happily use the output
 }
 ```
 
+If using `context.exec_cmd` isn't possible, please use `crate::utils::create_command` instead of `std::process::Command::new`.
+
 ## Logging
 
-Debug logging in starship is done with [pretty_env_logger](https://crates.io/crates/pretty_env_logger).
+Debug logging in starship is done with our custom logger implementation.
 To run starship with debug logs, set the `STARSHIP_LOG` environment variable to the log level needed.
 For example, to enable the trace logs, run the following:
 
@@ -90,12 +90,12 @@ Starship source files are linted with [clippy](https://crates.io/crates/clippy).
 
 ```sh
 rustup component add clippy
-cargo clippy
+cargo clippy --all-targets --all-features
 ```
 
 ## Formatting
 
-Starship source files are formatted with [rustfmt](https://crates.io/crates/rustfmt-nightly). Rustfmt will be ran as part of CI. Unformatted code will fail a build, so it is suggested that you run rustfmt locally:
+Starship source files are formatted with [rustfmt](https://crates.io/crates/rustfmt-nightly), using the default configuration. Rustfmt will be ran as part of CI. Unformatted code will fail a build, so it is suggested that you run rustfmt locally:
 
 ```sh
 rustup component add rustfmt
@@ -106,7 +106,7 @@ cargo fmt
 
 Testing is critical to making sure starship works as intended on systems big and small. Starship interfaces with many applications and system APIs when generating the prompt, so there's a lot of room for bugs to slip in.
 
-Unit tests are written using the built-in Rust testing library in the same file as the implementation, as is traditionally done in Rust codebases. These tests can be run with `cargo test` and are run on GitHub as part of our GitHub Actions continuous integration to ensure consistend behavior.
+Unit tests are written using the built-in Rust testing library in the same file as the implementation, as is traditionally done in Rust codebases. These tests can be run with `cargo test` and are run on GitHub as part of our GitHub Actions continuous integration to ensure consistent behavior.
 
 All tests that test the rendered output of a module should use `ModuleRenderer`. For Example:
 
@@ -178,11 +178,24 @@ Any tests that depend on File I/O should use [`sync_all()`](https://doc.rust-lan
 
 Any tests that use `tempfile::tempdir` should take care to call `dir.close()` after usage to ensure the lifecycle of the directory can be reasoned about. This includes `fixture_repo()` as it returns a TempDir that should be closed.
 
-## Running the Documentation Website Locally
+## Documentation
 
-If you are contributing to the design of Starship's website, the following section will help you get started.
+### Crowdin Translated Pages
 
-### Setup
+Many documentation pages have versions in non-English languages. These
+translated pages are managed by
+[Crowdin](https://crowdin.com/project/starship-prompt). Please do not edit
+these pages directly, even for changes that do not need to be translated (e.g.
+whitespace or emoji changes), since this can cause merges to fail.
+
+If you would like to contribute translations or corrections to the Crowdin
+generated pages, please visit our Crowdin site.
+
+### Running the Documentation Website Locally
+
+Changes to documentation can be viewed in a rendered state from the GitHub PR page
+(go to the CI section at the bottom of the page and look for "deploy preview", then
+click on "details"). If you want to view changes locally as well, follow these steps.
 
 After cloning the project, you can do the following to run the VuePress website on your local machine:
 
@@ -212,3 +225,29 @@ This is our preferred process for opening a PR on GitHub:
 5. Create a pull request from your branch to `starship/master`
 6. No need to assign the pull request to anyone, we'll review it when we can
 7. When the changes have been reviewed and approved, someone will squash and merge for you
+
+## New Module Checklist
+
+We love getting new modules for starship! While we try to keep the barrier for
+writing new modules low, starship provides a lot of functionality for a module,
+which requires quite a few things be done. These are listed here to help
+everyone remember what they are. Don't worry: most of them are quite simple!
+
+- [ ] Add a section to `docs/config/README.md` describing the module, and 
+      its configuration options/variables (more documentation is often
+      appropriate--this is a bare minimum).
+- [ ] Add the variable to the appropriate location in the "Default Prompt 
+      Format" section of the documentation
+- [ ] Add an appropriate choice of options to each preset in `docs/presets/README.md`
+- [ ] Create configs structs/traits in `src/configs/<module>.rs` and add the
+      following:
+  - [ ] An entry in `PROMPT_ORDER` (`src/configs/starship_root.rs`)
+  - [ ] An entry in `FullConfig` and the `Default` impl (`src/configs/mod.rs`)
+  - [ ] An entry in `ALL_MODULES` (`src/module.rs`)
+  - [ ] A `mod` declaration at the top of `src/modules/mod.rs`
+  - [ ] An entry in `handle()` (`src/modules/mod.rs`)
+  - [ ] A description for the `description()` function (`src/modules/mod.rs`)
+
+Finally, you should make sure to write your module's code in `src/modules`
+and add any commands that need to be mocked when testing in `src/utils.rs`.
+Command output can also be mocked in test by using `ModuleRenderer::cmd`.

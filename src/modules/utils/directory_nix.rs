@@ -32,15 +32,15 @@ pub fn is_write_allowed(folder_path: &Path) -> Result<bool, &'static str> {
     }
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
 fn get_supplementary_groups() -> Vec<u32> {
     match nix::unistd::getgroups() {
         Err(_) => Vec::new(),
-        Ok(v) => v.into_iter().map(|i| i.as_raw()).collect(),
+        Ok(v) => v.into_iter().map(nix::unistd::Gid::as_raw).collect(),
     }
 }
 
-#[cfg(all(unix, target_os = "macos"))]
+#[cfg(all(unix, any(target_os = "macos", target_os = "ios")))]
 fn get_supplementary_groups() -> Vec<u32> {
     // at the moment nix crate does not provide it for macOS
     Vec::new()

@@ -4,27 +4,25 @@ use crate::configs::terraform::TerraformConfig;
 use crate::formatter::StringFormatter;
 use crate::utils;
 
+use crate::formatter::VersionFormatter;
 use std::io;
 use std::path::PathBuf;
 
 /// Creates a module with the current Terraform version and workspace
-///
-/// Will display the Terraform version and workspace if any of the following criteria are met:
-///     - Current directory contains a `.terraform` directory
-///     - Current directory contains a file with the `.tf` extension
 pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
+    let mut module = context.new_module("terraform");
+    let config: TerraformConfig = TerraformConfig::try_load(module.config);
+
     let is_terraform_project = context
         .try_begin_scan()?
-        .set_folders(&[".terraform"])
-        .set_extensions(&["tf"])
+        .set_files(&config.detect_files)
+        .set_folders(&config.detect_folders)
+        .set_extensions(&config.detect_extensions)
         .is_match();
 
     if !is_terraform_project {
         return None;
     }
-
-    let mut module = context.new_module("terraform");
-    let config: TerraformConfig = TerraformConfig::try_load(module.config);
 
     let parsed = StringFormatter::new(config.format).and_then(|formatter| {
         formatter
@@ -37,14 +35,21 @@ pub fn module<'a>(context: &'a Context) -> Option<Module<'a>> {
                 _ => None,
             })
             .map(|variable| match variable {
-                "version" => format_terraform_version(
-                    &utils::exec_cmd("terraform", &["version"])?.stdout.as_str(),
-                )
+                "version" => {
+                    let terraform_version = parse_terraform_version(
+                        context.exec_cmd("terraform", &["version"])?.stdout.as_str(),
+                    )?;
+                    VersionFormatter::format_module_version(
+                        module.get_name(),
+                        &terraform_version,
+                        config.version_format,
+                    )
+                }
                 .map(Ok),
                 "workspace" => get_terraform_workspace(context).map(Ok),
                 _ => None,
             })
-            .parse(None)
+            .parse(None, Some(context))
     });
 
     module.set_segments(match parsed {
@@ -78,19 +83,18 @@ fn get_terraform_workspace(context: &Context) -> Option<String> {
     }
 }
 
-fn format_terraform_version(version: &str) -> Option<String> {
+fn parse_terraform_version(version: &str) -> Option<String> {
     // `terraform version` output looks like this
     // Terraform v0.12.14
     // With potential extra output if it detects you are not running the latest version
-    Some(
-        version
-            .lines()
-            .next()?
-            .trim_start_matches("Terraform ")
-            .trim()
-            .to_owned()
-            + " ",
-    )
+    let version = version
+        .lines()
+        .next()?
+        .trim_start_matches("Terraform ")
+        .trim()
+        .trim_start_matches('v');
+
+    Some(version.to_string())
 }
 
 #[cfg(test)]
@@ -102,44 +106,38 @@ mod tests {
     use std::io::{self, Write};
 
     #[test]
-    fn test_format_terraform_version_release() {
+    fn test_parse_terraform_version_release() {
         let input = "Terraform v0.12.14";
-        assert_eq!(
-            format_terraform_version(input),
-            Some("v0.12.14 ".to_string())
-        );
+        assert_eq!(parse_terraform_version(input), Some("0.12.14".to_string()));
     }
 
     #[test]
-    fn test_format_terraform_version_prerelease() {
+    fn test_parse_terraform_version_prerelease() {
         let input = "Terraform v0.12.14-rc1";
         assert_eq!(
-            format_terraform_version(input),
-            Some("v0.12.14-rc1 ".to_string())
+            parse_terraform_version(input),
+            Some("0.12.14-rc1".to_string())
         );
     }
 
     #[test]
-    fn test_format_terraform_version_development() {
+    fn test_parse_terraform_version_development() {
         let input = "Terraform v0.12.14-dev (cca89f74)";
         assert_eq!(
-            format_terraform_version(input),
-            Some("v0.12.14-dev (cca89f74) ".to_string())
+            parse_terraform_version(input),
+            Some("0.12.14-dev (cca89f74)".to_string())
         );
     }
 
     #[test]
-    fn test_format_terraform_version_multiline() {
+    fn test_parse_terraform_version_multiline() {
         let input = "Terraform v0.12.13
 
 Your version of Terraform is out of date! The latest version
 is 0.12.14. You can update by downloading from www.terraform.io/downloads.html
 
 ";
-        assert_eq!(
-            format_terraform_version(input),
-            Some("v0.12.13 ".to_string())
-        );
+        assert_eq!(parse_terraform_version(input), Some("0.12.13".to_string()));
     }
 
     #[test]
@@ -152,7 +150,7 @@ is 0.12.14. You can update by downloading from www.terraform.io/downloads.html
             .path(dir.path())
             .config(toml::toml! {
                 [terraform]
-                format = "via [$symbol$version$workspace]($style) "
+                format = "via [$symbol$version $workspace]($style) "
             })
             .collect();
 
@@ -177,7 +175,7 @@ is 0.12.14. You can update by downloading from www.terraform.io/downloads.html
             .path(dir.path())
             .config(toml::toml! {
                 [terraform]
-                format = "via [$symbol$version$workspace]($style) "
+                format = "via [$symbol$version $workspace]($style) "
             })
             .collect();
 
