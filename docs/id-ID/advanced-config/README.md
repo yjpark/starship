@@ -1,18 +1,42 @@
 # Konfigurasi Lanjutan
 
-Meskipun Starship tergolong sebagai shell yang serbaguna, terkadang kita butuh upaya yang lebih dari sekadar mengedit `starship.toml` untuk membuatnya menjalankan beberapa hal tertentu. Halaman ini merincikan beberapa teknik konfigurasi lanjutan yang digunakan oleh starship.
+Walaupun Starship adalah shell yang serbaguna, terkadang kita butuh upaya lebih dari sekadar mengedit `starship.toml` untuk membuatnya menjalankan beberapa hal tertentu. Halaman ini merincikan beberapa teknik konfigurasi lanjutan yang digunakan starship.
 
-::: peringatan
+::: warning
 
-Konfigurasi pada bagian ini dapat berubah saat pembaruan Starship rilis di kemudian hari nanti.
+Konfigurasi pada bagian ini dapat berubah saat Starship terbaru rilis di kemudian hari nanti.
 
 :::
+
+## Kustomisasi Perintah pre-prompt dan pre-execution Pada Cmd
+
+Clink menyediakan APIs yang sangat fleksibel untuk menjalankan perintah pre-prompt dan pre-exec di Cmd shell. Caranya sangat mudah dengan Starship. Ubahlah file `starship.lua` sesuai kebutuhanmu:
+
+- Untuk menjalankan custom function sebelum prompt muncul, definisikan function baru dengan nama `starship_preprompt_user_func`. Function ini menerima prompt yang berjalan sebagai string yang mampu kamu gunakan. Sebagai contoh, untuk menampilkan roket sebelum prompt, kamu bisa
+
+```lua
+function starship_preprompt_user_func(prompt)
+  print("🚀")
+end
+
+load(io.popen('starship init cmd'):read("*a"))()
+```
+
+- Untuk menjalankan custom function tepat sebelum perintah dieksekusi, definisikan function baru dengan nama `starship_precmd_user_func`. Function ini menerima prompt yang berjalan sebagai string yang mampu kamu gunakan. Sebagai contoh, untuk menampilkan perintah yang akan dieksekusi, kamu bisa
+
+```lua
+function starship_precmd_user_func(line)
+  print("Executing: "..line)
+end
+
+load(io.popen('starship init cmd'):read("*a"))()
+```
 
 ## Kustomisasi Perintah pre-prompt dan pre-execution Pada Bash
 
 Bash tidak memiliki framework preexec/precmd yang tetap seperti kebanyakan shell pada umumnya. Oleh karena itu, sulit halnya untuk membuat hook yang dapat dikustomisasi sepenuhnya di dalam `bash`. Namun, Starship memberikan beberapa cara supaya kamu bisa memasukkan fungsimu sendiri ke dalam prosedur prompt-rendering:
 
-- Untuk menjalankan fungsi yang dikustomisasi tepat sebelum prompt, buatlah sebuah fungsi baru lalu berikan nama `starship_precmd_user_func` ke fungsi tersebut. Sebagai contoh, untuk menampilkan gambar roket sebelum prompt, kamu bisa melakukannya dengan cara
+- Untuk menjalankan custom function tepat sebelum prompt, buatlah sebuah fungsi baru lalu berikan nama `starship_precmd_user_func` ke fungsi tersebut. Sebagai contoh, untuk menampilkan roket sebelum prompt, kamu bisa
 
 ```bash
 function blastoff(){
@@ -21,21 +45,23 @@ function blastoff(){
 starship_precmd_user_func="blastoff"
 ```
 
-- Untuk menjalankan fungsi yang dikustomisasi tepat sebelum commands berjalan, kamu bisa menggunakan [`DEBUG` trap mechanism](https://jichu4n.com/posts/debug-trap-and-prompt_command-in-bash/). Akan tetapi, kamu **harus** melakukan proses trap pada DEBUG signal *sebelum* menjalankan Starship! Starship bisa menyimpan nilai dari DEBUG trap, tapi jika trap diganti setelah starship berjalan, beberapa fungsi akan rusak.
+- Untuk menjalankan custom function tepat sebelum perintah berjalan, kamu bisa menggunakan [`DEBUG` trap mechanism](https://jichu4n.com/posts/debug-trap-and-prompt_command-in-bash/). Akan tetapi, kamu **harus** melakukan proses trap pada DEBUG signal _sebelum_ menjalankan Starship! Starship bisa menyimpan nilai dari DEBUG trap, tapi jika trap diganti setelah starship berjalan, beberapa fungsi akan rusak.
 
 ```bash
 function blastoff(){
     echo "🚀"
 }
-trap blastoff DEBUG     # Trap DEBUG *sebelum* menjalankan starship
+trap blastoff DEBUG     # Trap DEBUG *before* running starship
+set -o functrace
 eval $(starship init bash)
+set +o functrace
 ```
 
-## Custom pre-prompt and pre-execution Commands in PowerShell
+## Perintah Custom pre-promt dan pre-execution di PowerShell
 
-PowerShell does not have a formal preexec/precmd framework like most other shells. Because of this, it is difficult to provide fully customizable hooks in `powershell`. Namun, Starship memberikan beberapa cara supaya kamu bisa memasukkan fungsimu sendiri ke dalam prosedur prompt-rendering:
+PowerShell tidak memiliki framework preecex/precmd seperti kebanyak shells pada umumnya. Karena itu, sulit halnya untuk membuat hook yang dapat dikustomisasi sepenuhnya di dalam `powershell`. Namun, Starship memberimu sedikit kemampuan untuk bisa menambahkan function milikmu ke dalam prosedur prompt-rendering:
 
-Create a function named `Invoke-Starship-PreCommand`
+Buatlah sebuah funciton dengan nama `Invoke-Starship-PreCommand`
 
 ```powershell
 function Invoke-Starship-PreCommand {
@@ -43,35 +69,35 @@ function Invoke-Starship-PreCommand {
 }
 ```
 
-## Change Window Title
+## Mengubah Judul Window
 
-Some shell prompts will automatically change the window title for you (e.g. to reflect your working directory). Fish even does it by default. Starship does not do this, but it's fairly straightforward to add this functionality to `bash` or `zsh`.
+Beberapa prompt shell dengan otomatis akan mengubah judul window-nya untukmu (mis. untuk merefleksikan direktori kerjamu). Fish bahkan mengaturnya sebagai bawaan. Di dalam Starship tidak bisa, namun mudah halnya untuk menambahkan fungsionalitas tersebut ke dalam `bash`, `zsh`, `cmd` ataupun `powershell`.
 
-First, define a window title change function (identical in bash and zsh):
+Pertama, buatlah function untuk mengubah judul window (pada bash dan zsh):
 
 ```bash
 function set_win_title(){
-    echo -ne "\033]0; YOUR_WINDOW_TITLE_HERE \007"
+    echo -ne "\033]0; JUDUL_WINDOW_MU \007"
 }
 ```
 
-You can use variables to customize this title (`$USER`, `$HOSTNAME`, and `$PWD` are popular choices).
+Kamu bisa menggunakan variabel untuk mengkustomisasi judulnya (`$USER`, `$HOSTNAME`, dan `$PWD` adalah opsi yang populer).
 
-In `bash`, set this function to be the precmd starship function:
+Di dalam `bash`, atur function berikut menjadi function precmd untuk starship:
 
 ```bash
 starship_precmd_user_func="set_win_title"
 ```
 
-In `zsh`, add this to the `precmd_functions` array:
+Dalam `zsh`, pada array `precmd_functions`, tambahkan:
 
 ```bash
 precmd_functions+=(set_win_title)
 ```
 
-If you like the result, add these lines to your shell configuration file (`~/.bashrc` or `~/.zshrc`) to make it permanent.
+Kalau kamu suka dengan hasilnya, tambahkan baris (`~/.bashrc` or `~/.zshrc`) ke dalam file konfigurasi shell milikmu untuk membuatnya menjadi tetap.
 
-For example, if you want to display your current directory in your terminal tab title, add the following snippet to your `~/.bashrc` or `~/.zshrc`:
+Sebagai contoh, kalau kamu mau menampilkan lokasi direktori pada judul label terminalmu, tambahkan bagian berikut ke dalam `~/.bashrc` atau `~/.zshrc`:
 
 ```bash
 function set_win_title(){
@@ -80,7 +106,17 @@ function set_win_title(){
 starship_precmd_user_func="set_win_title"
 ```
 
-You can also set a similar output with PowerShell by creating a function named `Invoke-Starship-PreCommand`.
+Untuk Cmd, kamu dapat mengubah judul window-mu dengan menggunakan function `starship_preprompt_user_func`.
+
+```lua
+function starship_preprompt_user_func(prompt)
+  console.settitle(os.getenv('USERNAME').."@"..os.getenv('COMPUTERNAME')..": "..os.getcwd())
+end
+
+load(io.popen('starship init cmd'):read("*a"))()
+```
+
+Kamu juga dapat mengatur keluaran yang sama dengan PowerShell dengan membuat sebuah function bernama `Invoke-Starship-PreCommand`.
 
 ```powershell
 # edit $PROFILE
@@ -91,13 +127,13 @@ function Invoke-Starship-PreCommand {
 Invoke-Expression (&starship init powershell)
 ```
 
-## Enable Right Prompt
+## Mengaktifkan Right Prompt
 
-Some shells support a right prompt which renders on the same line as the input. Starship can set the content of the right prompt using the `right_format` option. Any module that can be used in `format` is also supported in `right_format`. The `$all` variable will only contain modules not explicitly used in either `format` or `right_format`.
+Sebagian shells mendukung right prompt yang mana dirender di baris yang sama sesuai dengan masukannya. Starship mampu mengatur konten right prompt dengan menggunakan opsi `right_format`. Semua modul yang bisa digunakan di dalam `format` juga dapat digunakan di dalam `right_format`. Variabel `$all` hanya akan memuat modul yang tidak digunakan secara eksplisit di dalam `format` ataupun `right_format`.
 
-Note: The right prompt is a single line following the input location. To right align modules above the input line in a multi-line prompt, see the [fill module](/config/#fill).
+Catatan: Right propmt merupakan sebuah baris yang mengikuti lokasi baris inputan. Untuk membuat modul rata ke kanan di atas baris masukan di dalam multi-line prompt, lihat [`fill` module](/config/#fill).
 
-`right_format` is currently supported for the following shells: elvish, fish, zsh.
+`right_format` saat ini hanya dapat bekerja pada beberapa shells berikut: elvish, fish, zsh, xonsh, cmd.
 
 ### Contoh
 
@@ -111,35 +147,57 @@ format = """$character"""
 right_format = """$all"""
 ```
 
-Produces a prompt like the following:
+Menghasilkan prompt seperti berikut:
 
 ```
-▶                                   starship on  rprompt [!] is 📦 v0.57.0 via 🦀 v1.54.0 took 17s
+starship on  rprompt [!] is 📦 v0.57.0 via 🦀 v1.54.0 took 17s
 ```
 
+## Prompt Berkelanjutan
 
-## Menata String
+Beberapa shells mendukung continuation prompt bersamaan dengan prompt biasa. Prompt tersebutlah yang akan dirender daripada prompt biasa ketika pengguna memasukkan perintah yang kurang lengkap (seperti tanda kurung atau tanda kutipan tunggal).
 
-Style strings are a list of words, separated by whitespace. The words are not case sensitive (i.e. `bold` and `BoLd` are considered the same string). Each word can be one of the following:
+Starship dapat mengatur continuation prompt dengan opsi `continuation_prompt`. Prompt bawaannya adalah `"[∙](bright-black) "`.
 
-  - `bold`
-  - `italic`
-  - `underline`
-  - `dimmed`
-  - `inverted`
-  - `bg:<color>`
-  - `fg:<color>`
-  - `<color>`
-  - `none`
+Catatan: `continuation_prompt` harus diubah menjadi string literal tanpa variabel apapun.
 
-where `<color>` is a color specifier (discussed below). `fg:<color>` and `<color>` currently do the same thing, though this may change in the future. `inverted` swaps the background and foreground colors. The order of words in the string does not matter.
+Catatan: Continuation prompts hanya tersedia pada beberapa shells berikut:
 
-The `none` token overrides all other tokens in a string if it is not part of a `bg:` specifier, so that e.g. `fg:red none fg:blue` will still create a string with no styling. `bg:none` sets the background to the default color so `fg:red bg:none` is equivalent to `red` or `fg:red` and `bg:green fg:red bg:none` is also equivalent to `fg:red` or `red`. It may become an error to use `none` in conjunction with other tokens in the future.
+- `bash`
+- `zsh`
+- `PowerShell`
 
-A color specifier can be one of the following:
+### Contoh
 
- - Warna terminal pada umumnya terdiri dari: `black`, `red`, `green`, `blue`, `yellow`, `purple`, `cyan`, `white`. Untuk memperoleh varian warna yang lebih cerah, kamu dapat menggunakan token `bright-` (mis. `bright-white`).
- - Menuliskannya dengan menggunakan `#` dan diikuti oleh enam digit angka hexadesimal. Spesifikasi [kode heksadesimal pada warna RGB](https://www.w3schools.com/colors/colors_hexadecimal.asp).
- - Menggunakan bilangan antara 0-255. Spesifikasi [8-bit Kode Warna ANSI](https://i.stack.imgur.com/KTSQa.png).
+```toml
+# ~/.config/starship.toml
 
-If multiple colors are specified for foreground/background, the last one in the string will take priority.
+# Continuation prompt yang menampilkan dua panah solid
+continuation_prompt = "▶▶"
+```
+
+## Penataan String
+
+Penataan string adalah kumpulan kata-kata, yang dipisahkan oleh ruang kosong. Kumpulannya tidak bersifat case sensitive (mis. `tebal` dan `TeBaL` dianggap sebagai string yang sama). Tiap-tiap kata berikut adalah opsinya:
+
+- `bold`
+- `italic`
+- `underline`
+- `dimmed`
+- `inverted`
+- `bg:<color>`
+- `fg:<color>`
+- `<color>`
+- `none`
+
+yang mana `<color>` merupakan sebuah penentu warna (dibahas di bawah). `fg:<color>` dan `<color>` untuk saat ini memiliki fungsi yang sama, meskipun bisa berubah di kemudian hari. `inverted` menggantikan warna pada latar depan dan belakang. Urutan kata pada string tidak jadi masalah.
+
+`none` bisa menimpa nilai token lainnya di dalam string jika Ia tidak termaksud dalam penentu warna pada `bg:` sebagai contoh, `fg:red none fg:blue` akan tetap menjadi string yang tidak memiliki penataan. `bg:none` menjadikan warna pada latar belakang sebagai warna bawaan. Jadi, nilai `fg:red bg:none` sama dengan `red` atau `fg:red` dan nilai `bg:green fg:red bg:none` juga sama dengan `fg:red` ataupun `red`. Mungkin akan jadi masalah untuk menggunakan `none` dengan token lainnya di kemudian hari.
+
+Penentuan warna bisa dilakukan dengan salah satu cara berikut:
+
+- Warna terminal pada umumnya terdiri dari: `black`, `red`, `green`, `blue`, `yellow`, `purple`, `cyan`, `white`. Secar opsional kamu bisa menambahkannya dengan `bright-` untuk mendapatkan versi yang lebih terang (mis. `bright-white`).
+- Menuliskannya dengan menggunakan `#` dan diikuti oleh enam digit angka hexadesimal. Spesifikasi [kode heksadesimal pada warna RGB](https://www.w3schools.com/colors/colors_hexadecimal.asp).
+- Menggunakan bilangan antara 0-255. Spesifikasi [8-bit Kode Warna ANSI](https://i.stack.imgur.com/KTSQa.png).
+
+Jika warna yang dipakai pada latar depan/latar belakang banyak, maka warna yang terbaru pada string yang akan diprioritaskan.

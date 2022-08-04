@@ -1,19 +1,24 @@
-use crate::config::{RootModuleConfig, StarshipConfig};
+use crate::config::{ModuleConfig, StarshipConfig};
 use crate::configs::StarshipRootConfig;
 use crate::module::Module;
-use crate::utils::{exec_cmd, CommandOutput};
+use crate::utils::{create_command, exec_timeout, read_file, CommandOutput};
 
 use crate::modules;
 use crate::utils::{self, home_dir};
-use clap::ArgMatches;
+use clap::Parser;
 use git2::{ErrorCode::UnbornBranch, Repository, RepositoryState};
 use once_cell::sync::OnceCell;
-use std::collections::{HashMap, HashSet};
+#[cfg(test)]
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Debug;
 use std::fs;
+use std::marker::PhantomData;
+use std::num::ParseIntError;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::string::String;
 use std::time::{Duration, Instant};
 use terminal_size::terminal_size;
@@ -33,14 +38,11 @@ pub struct Context<'a> {
     /// E.g. when navigating to a PSDrive in PowerShell, or a path without symlinks resolved.
     pub logical_dir: PathBuf,
 
-    /// A struct containing directory contents in a lookup-optimised format.
+    /// A struct containing directory contents in a lookup-optimized format.
     dir_contents: OnceCell<DirContents>,
 
     /// Properties to provide to modules.
-    pub properties: HashMap<&'a str, String>,
-
-    /// Pipestatus of processes in pipe
-    pub pipestatus: Option<Vec<String>>,
+    pub properties: Properties,
 
     /// Private field to store Git information for modules who need it
     repo: OnceCell<Repo>,
@@ -48,8 +50,8 @@ pub struct Context<'a> {
     /// The shell the user is assumed to be running
     pub shell: Shell,
 
-    /// Construct the right prompt instead of the left prompt
-    pub right: bool,
+    /// Which prompt to print (main, right, ...)
+    pub target: Target,
 
     /// Width of terminal, or zero if width cannot be detected.
     pub width: usize,
@@ -62,70 +64,82 @@ pub struct Context<'a> {
     #[cfg(test)]
     pub cmd: HashMap<&'a str, Option<CommandOutput>>,
 
+    /// a mock of the root directory
+    #[cfg(test)]
+    pub root_dir: tempfile::TempDir,
+
     #[cfg(feature = "battery")]
     pub battery_info_provider: &'a (dyn crate::modules::BatteryInfoProvider + Send + Sync),
 
     /// Starship root config
     pub root_config: StarshipRootConfig,
+
+    /// Avoid issues with unused lifetimes when features are disabled
+    _marker: PhantomData<&'a ()>,
 }
 
 impl<'a> Context<'a> {
     /// Identify the current working directory and create an instance of Context
     /// for it. "logical-path" is used when a shell allows the "current working directory"
     /// to be something other than a file system path (like powershell provider specific paths).
-    pub fn new(arguments: ArgMatches) -> Context {
+    pub fn new(arguments: Properties, target: Target) -> Context<'a> {
         let shell = Context::get_shell();
 
         // Retrieve the "current directory".
         // If the path argument is not set fall back to the OS current directory.
         let path = arguments
-            .value_of("path")
-            .map(PathBuf::from)
+            .path
+            .clone()
             .or_else(|| env::current_dir().ok())
             .or_else(|| env::var("PWD").map(PathBuf::from).ok())
-            .or_else(|| arguments.value_of("logical_path").map(PathBuf::from))
+            .or_else(|| arguments.logical_path.clone())
             .unwrap_or_default();
 
         // Retrieve the "logical directory".
         // If the path argument is not set fall back to the PWD env variable set by many shells
         // or to the other path.
         let logical_path = arguments
-            .value_of("logical_path")
-            .map(PathBuf::from)
+            .logical_path
+            .clone()
             .or_else(|| env::var("PWD").map(PathBuf::from).ok())
             .unwrap_or_else(|| path.clone());
 
-        Context::new_with_shell_and_path(arguments, shell, path, logical_path)
+        Context::new_with_shell_and_path(arguments, shell, target, path, logical_path)
     }
 
     /// Create a new instance of Context for the provided directory
     pub fn new_with_shell_and_path(
-        arguments: ArgMatches,
+        mut properties: Properties,
         shell: Shell,
+        target: Target,
         path: PathBuf,
         logical_path: PathBuf,
-    ) -> Context {
+    ) -> Context<'a> {
         let config = StarshipConfig::initialize();
 
-        // Unwrap the clap arguments into a simple hashtable
-        let properties: HashMap<&str, std::string::String> = arguments
-            .args
-            .iter()
-            .filter(|(_, v)| !v.vals.is_empty())
-            .map(|(a, b)| (*a, b.vals.first().cloned().unwrap().into_string().unwrap()))
-            .collect();
+        // If the vector is zero-length, we should pretend that we didn't get a
+        // pipestatus at all (since this is the input `--pipestatus=""`)
+        if properties
+            .pipestatus
+            .as_deref()
+            .map_or(false, |p| p.len() == 1 && p[0].is_empty())
+        {
+            properties.pipestatus = None;
+        }
+        log::trace!(
+            "Received completed pipestatus of {:?}",
+            properties.pipestatus
+        );
 
-        let pipestatus = arguments
-            .values_of("pipestatus")
-            .map(Context::get_and_flatten_pipestatus)
-            .flatten();
-
-        log::trace!("Received completed pipestatus of {:?}", pipestatus);
+        // If status-code is empty, set it to None
+        if matches!(properties.status_code.as_deref(), Some("")) {
+            properties.status_code = None;
+        }
 
         // Canonicalize the current path to resolve symlinks, etc.
-        // NOTE: On Windows this converts the path to extended-path syntax.
+        // NOTE: On Windows this may convert the path to extended-path syntax.
         let current_dir = Context::expand_tilde(path);
-        let current_dir = current_dir.canonicalize().unwrap_or(current_dir);
+        let current_dir = dunce::canonicalize(&current_dir).unwrap_or(current_dir);
         let logical_dir = logical_path;
 
         let root_config = config
@@ -133,25 +147,20 @@ impl<'a> Context<'a> {
             .as_ref()
             .map_or_else(StarshipRootConfig::default, StarshipRootConfig::load);
 
-        let right = arguments.is_present("right");
-
-        let width = arguments
-            .value_of("terminal_width")
-            .and_then(|w| w.parse().ok())
-            .or_else(|| terminal_size().map(|(w, _)| w.0 as usize))
-            .unwrap_or(80);
+        let width = properties.terminal_width;
 
         Context {
             config,
             properties,
-            pipestatus,
             current_dir,
             logical_dir,
             dir_contents: OnceCell::new(),
             repo: OnceCell::new(),
             shell,
-            right,
+            target,
             width,
+            #[cfg(test)]
+            root_dir: tempfile::TempDir::new().unwrap(),
             #[cfg(test)]
             env: HashMap::new(),
             #[cfg(test)]
@@ -159,6 +168,7 @@ impl<'a> Context<'a> {
             #[cfg(feature = "battery")]
             battery_info_provider: &crate::modules::BatteryInfoProviderImpl,
             root_config,
+            _marker: PhantomData,
         }
     }
 
@@ -171,7 +181,7 @@ impl<'a> Context<'a> {
         home_dir()
     }
 
-    // Retrives a environment variable from the os or from a table if in testing mode
+    // Retrieves a environment variable from the os or from a table if in testing mode
     #[cfg(test)]
     pub fn get_env<K: AsRef<str>>(&self, key: K) -> Option<String> {
         self.env
@@ -185,7 +195,7 @@ impl<'a> Context<'a> {
         env::var(key.as_ref()).ok()
     }
 
-    // Retrives a environment variable from the os or from a table if in testing mode (os version)
+    // Retrieves a environment variable from the os or from a table if in testing mode (os version)
     #[cfg(test)]
     pub fn get_env_os<K: AsRef<str>>(&self, key: K) -> Option<OsString> {
         self.env.get(key.as_ref()).map(OsString::from)
@@ -204,26 +214,6 @@ impl<'a> Context<'a> {
             return utils::home_dir().unwrap().join(without_home);
         }
         dir
-    }
-
-    /// Reads and appropriately flattens multiple args for pipestatus
-    pub fn get_and_flatten_pipestatus(args: clap::Values) -> Option<Vec<String>> {
-        // Due to shell differences, we can potentially receive individual or space
-        // separated inputs, e.g. "0","1","2","0" is the same as "0 1 2 0" and
-        // "0 1", "2 0". We need to accept all these formats and return a Vec<String>
-        let parsed_vals = args
-            .into_iter()
-            .map(|x| x.split_ascii_whitespace())
-            .flatten()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        // If the vector is zero-length, we should pretend that we didn't get a
-        // pipestatus at all (since this is the input `--pipestatus=""`)
-        if parsed_vals.is_empty() {
-            None
-        } else {
-            Some(parsed_vals)
-        }
     }
 
     /// Create a new module
@@ -270,7 +260,8 @@ impl<'a> Context<'a> {
             let repository = if env::var("GIT_DIR").is_ok() {
                 Repository::open_from_env()
             } else {
-                Repository::discover(&self.current_dir)
+                let dirs: [PathBuf; 0] = [];
+                Repository::open_ext(&self.current_dir, git2::RepositoryOpenFlags::FROM_ENV, dirs)
             }?;
             Ok(Repo {
                 branch: get_current_branch(&repository),
@@ -295,18 +286,23 @@ impl<'a> Context<'a> {
             "bash" => Shell::Bash,
             "fish" => Shell::Fish,
             "ion" => Shell::Ion,
-            "powershell" => Shell::PowerShell,
+            "powershell" | "pwsh" => Shell::PowerShell,
             "zsh" => Shell::Zsh,
             "elvish" => Shell::Elvish,
             "tcsh" => Shell::Tcsh,
             "nu" => Shell::Nu,
             "xonsh" => Shell::Xonsh,
+            "cmd" => Shell::Cmd,
             _ => Shell::Unknown,
         }
     }
 
+    // TODO: This should be used directly by clap parse
     pub fn get_cmd_duration(&self) -> Option<u128> {
-        self.properties.get("cmd_duration")?.parse::<u128>().ok()
+        self.properties
+            .cmd_duration
+            .as_deref()
+            .and_then(|cd| cd.parse::<u128>().ok())
     }
 
     /// Execute a command and return the output on stdout and stderr if successful
@@ -316,18 +312,48 @@ impl<'a> Context<'a> {
         cmd: T,
         args: &[U],
     ) -> Option<CommandOutput> {
+        log::trace!(
+            "Executing command {:?} with args {:?} from context",
+            cmd,
+            args
+        );
         #[cfg(test)]
         {
             let command = crate::utils::display_command(&cmd, args);
-            if let Some(output) = self.cmd.get(command.as_str()) {
-                return output.clone();
+            if let Some(output) = self
+                .cmd
+                .get(command.as_str())
+                .cloned()
+                .or_else(|| crate::utils::mock_cmd(&cmd, args))
+            {
+                return output;
             }
         }
-        exec_cmd(
-            &cmd,
-            args,
+        let mut cmd = create_command(cmd).ok()?;
+        cmd.args(args).current_dir(&self.current_dir);
+        exec_timeout(
+            &mut cmd,
             Duration::from_millis(self.root_config.command_timeout),
         )
+    }
+
+    /// Attempt to execute several commands with `exec_cmd`, return the results of the first that works
+    pub fn exec_cmds_return_first(&self, commands: Vec<Vec<&str>>) -> Option<CommandOutput> {
+        commands
+            .iter()
+            .find_map(|attempt| self.exec_cmd(attempt[0], &attempt[1..]))
+    }
+
+    /// Returns the string contents of a file from the current working directory
+    pub fn read_file_from_pwd(&self, file_name: &str) -> Option<String> {
+        if !self.try_begin_scan()?.set_files(&[file_name]).is_match() {
+            log::debug!(
+                "Not attempting to read {file_name} because, it was not found during scan."
+            );
+            return None;
+        }
+
+        read_file(self.current_dir.join(file_name)).ok()
     }
 }
 
@@ -371,10 +397,27 @@ impl DirContents {
                     folders.insert(path);
                 } else {
                     if !path.to_string_lossy().starts_with('.') {
+                        // Extract the file extensions (yes, that's plural) from a filename.
+                        // Why plural? Consider the case of foo.tar.gz. It's a compressed
+                        // tarball (tar.gz), and it's a gzipped file (gz). We should be able
+                        // to match both.
+
+                        // find the minimal extension on a file. ie, the gz in foo.tar.gz
+                        // NB the .to_string_lossy().to_string() here looks weird but is
+                        // required to convert it from a Cow.
                         path.extension()
                             .map(|ext| extensions.insert(ext.to_string_lossy().to_string()));
+
+                        // find the full extension on a file. ie, the tar.gz in foo.tar.gz
+                        path.file_name().map(|file_name| {
+                            file_name
+                                .to_string_lossy()
+                                .split_once('.')
+                                .map(|(_, after)| extensions.insert(after.to_string()))
+                        });
                     }
                     if let Some(file_name) = path.file_name() {
+                        // this .to_string_lossy().to_string() is also required
                         file_names.insert(file_name.to_string_lossy().to_string());
                     }
                     files.insert(path);
@@ -406,24 +449,47 @@ impl DirContents {
         self.file_names.contains(name)
     }
 
-    pub fn has_any_file_name(&self, names: &[&str]) -> bool {
-        names.iter().any(|name| self.has_file_name(name))
-    }
-
     pub fn has_folder(&self, path: &str) -> bool {
         self.folders.contains(Path::new(path))
-    }
-
-    pub fn has_any_folder(&self, paths: &[&str]) -> bool {
-        paths.iter().any(|path| self.has_folder(path))
     }
 
     pub fn has_extension(&self, ext: &str) -> bool {
         self.extensions.contains(ext)
     }
 
-    pub fn has_any_extension(&self, exts: &[&str]) -> bool {
-        exts.iter().any(|ext| self.has_extension(ext))
+    pub fn has_any_positive_file_name(&self, names: &[&str]) -> bool {
+        names
+            .iter()
+            .any(|name| !name.starts_with('!') && self.has_file_name(name))
+    }
+
+    pub fn has_any_positive_folder(&self, paths: &[&str]) -> bool {
+        paths
+            .iter()
+            .any(|path| !path.starts_with('!') && self.has_folder(path))
+    }
+
+    pub fn has_any_positive_extension(&self, exts: &[&str]) -> bool {
+        exts.iter()
+            .any(|ext| !ext.starts_with('!') && self.has_extension(ext))
+    }
+
+    pub fn has_no_negative_file_name(&self, names: &[&str]) -> bool {
+        !names
+            .iter()
+            .any(|name| name.starts_with('!') && self.has_file_name(&name[1..]))
+    }
+
+    pub fn has_no_negative_folder(&self, paths: &[&str]) -> bool {
+        !paths
+            .iter()
+            .any(|path| path.starts_with('!') && self.has_folder(&path[1..]))
+    }
+
+    pub fn has_no_negative_extension(&self, exts: &[&str]) -> bool {
+        !exts
+            .iter()
+            .any(|ext| ext.starts_with('!') && self.has_extension(&ext[1..]))
     }
 }
 
@@ -469,27 +535,37 @@ pub struct ScanDir<'a> {
 }
 
 impl<'a> ScanDir<'a> {
+    #[must_use]
     pub const fn set_files(mut self, files: &'a [&'a str]) -> Self {
         self.files = files;
         self
     }
 
+    #[must_use]
     pub const fn set_extensions(mut self, extensions: &'a [&'a str]) -> Self {
         self.extensions = extensions;
         self
     }
 
+    #[must_use]
     pub const fn set_folders(mut self, folders: &'a [&'a str]) -> Self {
         self.folders = folders;
         self
     }
 
-    /// based on the current PathBuf check to see
+    /// based on the current `PathBuf` check to see
     /// if any of this criteria match or exist and returning a boolean
     pub fn is_match(&self) -> bool {
-        self.dir_contents.has_any_extension(self.extensions)
-            || self.dir_contents.has_any_folder(self.folders)
-            || self.dir_contents.has_any_file_name(self.files)
+        // if there exists a file with a file/folder/ext we've said we don't want,
+        // fail the match straight away
+        self.dir_contents.has_no_negative_extension(self.extensions)
+            && self.dir_contents.has_no_negative_file_name(self.files)
+            && self.dir_contents.has_no_negative_folder(self.folders)
+            && (self
+                .dir_contents
+                .has_any_positive_extension(self.extensions)
+                || self.dir_contents.has_any_positive_file_name(self.files)
+                || self.dir_contents.has_any_positive_folder(self.folders))
     }
 }
 
@@ -544,7 +620,7 @@ fn get_remote_repository_info(repository: &Repository) -> Option<Remote> {
     None
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shell {
     Bash,
     Fish,
@@ -555,7 +631,82 @@ pub enum Shell {
     Tcsh,
     Nu,
     Xonsh,
+    Cmd,
     Unknown,
+}
+
+/// Which kind of prompt target to print (main prompt, rprompt, ...)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Main,
+    Right,
+    Continuation,
+}
+
+/// Properties as passed on from the shell as arguments
+#[derive(Parser, Debug)]
+pub struct Properties {
+    /// The status code of the previously run command as an unsigned or signed 32bit integer
+    #[clap(short = 's', long = "status")]
+    pub status_code: Option<String>,
+    /// Bash, Fish and Zsh support returning codes for each process in a pipeline.
+    #[clap(long, value_delimiter = ' ')]
+    pub pipestatus: Option<Vec<String>>,
+    /// The width of the current interactive terminal.
+    #[clap(short = 'w', long, default_value_t=default_width(), value_parser=parse_width)]
+    terminal_width: usize,
+    /// The path that the prompt should render for.
+    #[clap(short, long)]
+    path: Option<PathBuf>,
+    /// The logical path that the prompt should render for.
+    /// This path should be a virtual/logical representation of the PATH argument.
+    #[clap(short = 'P', long)]
+    logical_path: Option<PathBuf>,
+    /// The execution duration of the last command, in milliseconds
+    #[clap(short = 'd', long)]
+    pub cmd_duration: Option<String>,
+    /// The keymap of fish/zsh/cmd
+    #[clap(short = 'k', long, default_value = "viins")]
+    pub keymap: String,
+    /// The number of currently running jobs
+    #[clap(short, long, default_value_t, value_parser=parse_jobs)]
+    pub jobs: i64,
+}
+
+impl Default for Properties {
+    fn default() -> Self {
+        Self {
+            status_code: None,
+            pipestatus: None,
+            terminal_width: default_width(),
+            path: None,
+            logical_path: None,
+            cmd_duration: None,
+            keymap: "viins".to_string(),
+            jobs: 0,
+        }
+    }
+}
+
+/// Parse String, but treat empty strings as `None`
+fn parse_trim<F: FromStr>(value: &str) -> Option<Result<F, F::Err>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(F::from_str(value))
+}
+
+fn parse_jobs(jobs: &str) -> Result<i64, ParseIntError> {
+    parse_trim(jobs).unwrap_or(Ok(0))
+}
+
+fn default_width() -> usize {
+    terminal_size().map_or(80, |(w, _)| w.0 as usize)
+}
+
+fn parse_width(width: &str) -> Result<usize, ParseIntError> {
+    parse_trim(width).unwrap_or_else(|| Ok(default_width()))
 }
 
 #[cfg(test)]
@@ -622,6 +773,50 @@ mod tests {
         .is_match());
         node.close()?;
 
+        let tarballs = testdir(&["foo.tgz", "foo.tar.gz"])?;
+        let tarballs_dc = DirContents::from_path(tarballs.path())?;
+        assert!(ScanDir {
+            dir_contents: &tarballs_dc,
+            files: &[],
+            extensions: &["tar.gz"],
+            folders: &[],
+        }
+        .is_match());
+        tarballs.close()?;
+
+        let dont_match_ext = testdir(&["foo.js", "foo.ts"])?;
+        let dont_match_ext_dc = DirContents::from_path(dont_match_ext.path())?;
+        assert!(!ScanDir {
+            dir_contents: &dont_match_ext_dc,
+            files: &[],
+            extensions: &["js", "!notfound", "!ts"],
+            folders: &[],
+        }
+        .is_match());
+        dont_match_ext.close()?;
+
+        let dont_match_file = testdir(&["goodfile", "evilfile"])?;
+        let dont_match_file_dc = DirContents::from_path(dont_match_file.path())?;
+        assert!(!ScanDir {
+            dir_contents: &dont_match_file_dc,
+            files: &["goodfile", "!notfound", "!evilfile"],
+            extensions: &[],
+            folders: &[],
+        }
+        .is_match());
+        dont_match_file.close()?;
+
+        let dont_match_folder = testdir(&["gooddir/somefile", "evildir/somefile"])?;
+        let dont_match_folder_dc = DirContents::from_path(dont_match_folder.path())?;
+        assert!(!ScanDir {
+            dir_contents: &dont_match_folder_dc,
+            files: &[],
+            extensions: &[],
+            folders: &["gooddir", "!notfound", "!evildir"],
+        }
+        .is_match());
+        dont_match_folder.close()?;
+
         Ok(())
     }
 
@@ -644,18 +839,17 @@ mod tests {
         // Mock navigation into the symlink path
         let test_path = path_symlink.join("yyy");
         let context = Context::new_with_shell_and_path(
-            ArgMatches::default(),
+            Default::default(),
             Shell::Unknown,
+            Target::Main,
             test_path.clone(),
             test_path.clone(),
         );
 
         assert_ne!(context.current_dir, context.logical_dir);
 
-        let expected_current_dir = path_actual
-            .join("yyy")
-            .canonicalize()
-            .expect("canonicalize");
+        let expected_current_dir =
+            dunce::canonicalize(path_actual.join("yyy")).expect("canonicalize");
         assert_eq!(expected_current_dir, context.current_dir);
 
         let expected_logical_dir = test_path;
@@ -669,8 +863,9 @@ mod tests {
         // Mock navigation to a directory which does not exist on disk
         let test_path = Path::new("/path_which_does_not_exist").to_path_buf();
         let context = Context::new_with_shell_and_path(
-            ArgMatches::default(),
+            Default::default(),
             Shell::Unknown,
+            Target::Main,
             test_path.clone(),
             test_path.clone(),
         );
@@ -689,8 +884,9 @@ mod tests {
         // Mock navigation to a directory which does not exist on disk
         let test_path = Path::new("~/path_which_does_not_exist").to_path_buf();
         let context = Context::new_with_shell_and_path(
-            ArgMatches::default(),
+            Default::default(),
             Shell::Unknown,
+            Target::Main,
             test_path.clone(),
             test_path.clone(),
         );
@@ -702,5 +898,22 @@ mod tests {
 
         let expected_logical_dir = test_path;
         assert_eq!(expected_logical_dir, context.logical_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_extended_path_prefix() {
+        let test_path = Path::new(r"\\?\C:\").to_path_buf();
+        let context = Context::new_with_shell_and_path(
+            Properties::default(),
+            Shell::Unknown,
+            Target::Main,
+            test_path.clone(),
+            test_path,
+        );
+
+        let expected_path = Path::new(r"C:\");
+
+        assert_eq!(&context.current_dir, expected_path);
     }
 }

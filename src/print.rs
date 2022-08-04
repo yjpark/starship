@@ -1,5 +1,5 @@
 use ansi_term::ANSIStrings;
-use clap::ArgMatches;
+use clap::{PossibleValue, ValueEnum};
 use rayon::prelude::*;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Write as FmtWrite};
@@ -10,12 +10,13 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthChar;
 
 use crate::configs::PROMPT_ORDER;
-use crate::context::{Context, Shell};
+use crate::context::{Context, Properties, Shell, Target};
 use crate::formatter::{StringFormatter, VariableHolder};
 use crate::module::Module;
 use crate::module::ALL_MODULES;
 use crate::modules;
 use crate::segment::Segment;
+use crate::shadow;
 
 pub struct Grapheme<'a>(pub &'a str);
 
@@ -54,8 +55,8 @@ fn test_grapheme_aware_width() {
     assert_eq!(11, "normal text".width_graphemes());
 }
 
-pub fn prompt(args: ArgMatches) {
-    let context = Context::new(args);
+pub fn prompt(args: Properties, target: Target) {
+    let context = Context::new(args, target);
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     write!(handle, "{}", get_prompt(context)).unwrap();
@@ -76,7 +77,7 @@ pub fn get_prompt(context: Context) -> String {
 
     // A workaround for a fish bug (see #739,#279). Applying it to all shells
     // breaks things (see #808,#824,#834). Should only be printed in fish.
-    if let Shell::Fish = context.shell {
+    if Shell::Fish == context.shell && context.target == Target::Main {
         buf.push_str("\x1b[J"); // An ASCII control code to clear screen
     }
 
@@ -114,7 +115,8 @@ pub fn get_prompt(context: Context) -> String {
     );
 
     let module_strings = root_module.ansi_strings_for_shell(context.shell, Some(context.width));
-    if config.add_newline {
+    if config.add_newline && context.target != Target::Continuation {
+        // continuation prompts normally do not include newlines, but they can
         writeln!(buf).unwrap();
     }
     if context.width > 0 {
@@ -123,13 +125,13 @@ pub fn get_prompt(context: Context) -> String {
     }
     write!(buf, "{}", ANSIStrings(&module_strings)).unwrap();
 
-    if context.right {
+    if context.target == Target::Right {
         // right prompts generally do not allow newlines
         buf = buf.replace('\n', "");
     }
 
     // escape \n and ! characters for tcsh
-    if let Shell::Tcsh = context.shell {
+    if context.shell == Shell::Tcsh {
         buf = buf.replace('!', "\\!");
         // space is required before newline
         buf = buf.replace('\n', " \\n");
@@ -138,8 +140,8 @@ pub fn get_prompt(context: Context) -> String {
     buf
 }
 
-pub fn module(module_name: &str, args: ArgMatches) {
-    let context = Context::new(args);
+pub fn module(module_name: &str, args: Properties) {
+    let context = Context::new(args, Target::Main);
     let module = get_module(module_name, context).unwrap_or_default();
     print!("{}", module);
 }
@@ -148,8 +150,8 @@ pub fn get_module(module_name: &str, context: Context) -> Option<String> {
     modules::handle(module_name, &context).map(|m| m.to_string())
 }
 
-pub fn timings(args: ArgMatches) {
-    let context = Context::new(args);
+pub fn timings(args: Properties) {
+    let context = Context::new(args, Target::Main);
 
     struct ModuleTiming {
         name: String,
@@ -194,8 +196,8 @@ pub fn timings(args: ArgMatches) {
     }
 }
 
-pub fn explain(args: ArgMatches) {
-    let context = Context::new(args);
+pub fn explain(args: Properties) {
+    let context = Context::new(args, Target::Main);
 
     struct ModuleInfo {
         value: String,
@@ -248,7 +250,7 @@ pub fn explain(args: ArgMatches) {
                 " ".repeat(max_module_width - (info.value_len))
             );
             for g in info.desc.graphemes(true) {
-                // Handle ANSI escape sequnces
+                // Handle ANSI escape sequences
                 if g == "\x1B" {
                     escaping = true;
                 }
@@ -420,26 +422,67 @@ fn load_formatter_and_modules<'a>(context: &'a Context) -> (StringFormatter<'a>,
 
     let lformatter = StringFormatter::new(&config.format);
     let rformatter = StringFormatter::new(&config.right_format);
+    let cformatter = StringFormatter::new(&config.continuation_prompt);
     if lformatter.is_err() {
         log::error!("Error parsing `format`")
     }
     if rformatter.is_err() {
         log::error!("Error parsing `right_format`")
     }
+    if cformatter.is_err() {
+        log::error!("Error parsing `continuation_prompt`")
+    }
 
-    match (lformatter, rformatter) {
-        (Ok(lf), Ok(rf)) => {
+    match (lformatter, rformatter, cformatter) {
+        (Ok(lf), Ok(rf), Ok(cf)) => {
             let mut modules: BTreeSet<String> = BTreeSet::new();
-            modules.extend(lf.get_variables());
-            modules.extend(rf.get_variables());
-            if context.right {
-                (rf, modules)
-            } else {
-                (lf, modules)
+            if context.target != Target::Continuation {
+                modules.extend(lf.get_variables());
+                modules.extend(rf.get_variables());
+            }
+            match context.target {
+                Target::Main => (lf, modules),
+                Target::Right => (rf, modules),
+                Target::Continuation => (cf, modules),
             }
         }
         _ => (StringFormatter::raw(">"), BTreeSet::new()),
     }
+}
+
+#[cfg(feature = "config-schema")]
+pub fn print_schema() {
+    let schema = schemars::schema_for!(crate::configs::FullConfig);
+    println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+}
+
+#[derive(Clone, Debug)]
+pub struct Preset(pub &'static str);
+
+impl ValueEnum for Preset {
+    fn value_variants<'a>() -> &'a [Self] {
+        shadow::get_preset_list()
+    }
+
+    fn to_possible_value<'a>(&self) -> Option<clap::PossibleValue<'a>> {
+        Some(PossibleValue::new(self.0))
+    }
+}
+
+pub fn preset_command(name: Option<Preset>, list: bool) {
+    if list {
+        println!("{}", preset_list());
+        return;
+    }
+    let variant = name.expect("name argument must be specified");
+    shadow::print_preset_content(variant.0);
+}
+
+fn preset_list() -> String {
+    Preset::value_variants()
+        .iter()
+        .map(|v| format!("{}\n", v.0))
+        .collect()
 }
 
 #[cfg(test)]
@@ -459,10 +502,45 @@ mod test {
             }),
         };
         context.root_config.right_format = "$character".to_string();
-        context.right = true;
+        context.target = Target::Right;
 
         let expected = String::from(">>"); // should strip new lines
         let actual = get_prompt(context);
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn continuation_prompt() {
+        let mut context = default_context();
+        context.config = StarshipConfig {
+            config: Some(toml::toml! {
+                continuation_prompt="><>"
+            }),
+        };
+        context.root_config.continuation_prompt = "><>".to_string();
+        context.target = Target::Continuation;
+
+        let expected = String::from("><>");
+        let actual = get_prompt(context);
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn preset_list_returns_one_or_more_items() {
+        assert!(preset_list().trim().split('\n').count() > 0);
+    }
+
+    #[test]
+    fn preset_command_does_not_panic_on_correct_inputs() {
+        preset_command(None, true);
+        Preset::value_variants()
+            .iter()
+            .for_each(|v| preset_command(Some(v.clone()), false));
+    }
+
+    #[test]
+    #[cfg(feature = "config-schema")]
+    fn print_schema_does_not_panic() {
+        print_schema();
     }
 }

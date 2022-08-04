@@ -5,7 +5,7 @@ use std::process;
 use std::process::Stdio;
 use std::str::FromStr;
 
-use crate::config::RootModuleConfig;
+use crate::config::ModuleConfig;
 use crate::config::StarshipConfig;
 use crate::configs::PROMPT_ORDER;
 use crate::utils;
@@ -61,8 +61,7 @@ fn handle_update_configuration(doc: &mut Document, name: &str, value: &str) -> R
     }
 
     let mut new_value = toml_edit::Value::from_str(value)
-        .map(toml_edit::Item::Value)
-        .unwrap_or_else(|_| toml_edit::value(value));
+        .map_or_else(|_| toml_edit::value(value), toml_edit::Item::Value);
 
     if let Some(value) = current_item.as_value() {
         *new_value.as_value_mut().unwrap().decor_mut() = value.decor().clone();
@@ -73,7 +72,7 @@ fn handle_update_configuration(doc: &mut Document, name: &str, value: &str) -> R
     Ok(())
 }
 
-pub fn print_configuration(use_default: bool, paths: &[&str]) {
+pub fn print_configuration(use_default: bool, paths: &[String]) {
     let config = if use_default {
         // Get default config
         let default_config = crate::configs::FullConfig::default();
@@ -83,7 +82,7 @@ pub fn print_configuration(use_default: bool, paths: &[&str]) {
         // Get config as toml::Value
         let user_config = get_configuration();
         // Convert into FullConfig and fill in default values
-        let user_config = crate::configs::FullConfig::try_load(Some(&user_config));
+        let user_config = crate::configs::FullConfig::load(&user_config);
         // Convert back to Value because toml can't serialize FullConfig directly
         toml::value::Value::try_from(user_config).unwrap()
     };
@@ -94,7 +93,7 @@ pub fn print_configuration(use_default: bool, paths: &[&str]) {
     if paths.is_empty()
         || paths
             .iter()
-            .any(|&path| path == "format" || path == "right_format")
+            .any(|path| path == "format" || path == "right_format")
     {
         println!(
             "# $all is shorthand for {}",
@@ -128,7 +127,7 @@ pub fn print_configuration(use_default: bool, paths: &[&str]) {
     println!("{}", string_config);
 }
 
-fn extract_toml_paths(mut config: toml::Value, paths: &[&str]) -> toml::Value {
+fn extract_toml_paths(mut config: toml::Value, paths: &[String]) -> toml::Value {
     // Extract all the requested sections into a new configuration.
     let mut subset = toml::value::Table::new();
     let config = if let Some(config) = config.as_table_mut() {
@@ -138,7 +137,7 @@ fn extract_toml_paths(mut config: toml::Value, paths: &[&str]) -> toml::Value {
         return toml::Value::Table(subset);
     };
 
-    'paths: for &path in paths {
+    'paths: for path in paths {
         let path_segments: Vec<_> = path.split('.').collect();
         let (&end, parents) = path_segments.split_last().unwrap_or((&"", &[]));
 
@@ -147,7 +146,7 @@ fn extract_toml_paths(mut config: toml::Value, paths: &[&str]) -> toml::Value {
         for &segment in parents {
             source_cursor = if let Some(child) = source_cursor
                 .get_mut(segment)
-                .and_then(|value| value.as_table_mut())
+                .and_then(toml::Value::as_table_mut)
             {
                 child
             } else {
@@ -266,12 +265,24 @@ pub fn write_configuration(doc: &Document) {
         .expect("Error writing starship config");
 }
 
-pub fn edit_configuration() {
+pub fn edit_configuration(editor_override: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    // Argument currently only used for testing, but could be used to specify
+    // an editor override on the command line.
     let config_path = get_config_path();
-    let editor_cmd = shell_words::split(&get_editor()).expect("Unmatched quotes found in $EDITOR.");
 
-    let command = utils::create_command(&editor_cmd[0])
-        .expect("Unable to locate editor in $PATH.")
+    let editor_cmd = shell_words::split(&get_editor(editor_override))?;
+    let mut command = match utils::create_command(&editor_cmd[0]) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!(
+                "Unable to find editor {:?}. Are $VISUAL and $EDITOR set correctly?",
+                editor_cmd[0]
+            );
+            return Err(Box::new(e));
+        }
+    };
+
+    let res = command
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -279,24 +290,20 @@ pub fn edit_configuration() {
         .arg(config_path)
         .status();
 
-    match command {
-        Ok(_) => (),
-        Err(error) => match error.kind() {
-            ErrorKind::NotFound => {
-                eprintln!(
-                    "Error: editor {:?} was not found. Did you set your $EDITOR or $VISUAL \
-                    environment variables correctly?",
-                    editor_cmd
-                );
-                std::process::exit(1)
-            }
-            other_error => panic!("failed to open file: {:?}", other_error),
-        },
-    };
+    if let Err(e) = res {
+        eprintln!("Unable to launch editor {:?}", editor_cmd);
+        return Err(Box::new(e));
+    }
+
+    Ok(())
 }
 
-fn get_editor() -> String {
-    get_editor_internal(env::var("VISUAL").ok(), env::var("EDITOR").ok())
+fn get_editor(editor_override: Option<&str>) -> String {
+    if let Some(cmd) = editor_override {
+        cmd.to_string()
+    } else {
+        get_editor_internal(std::env::var("VISUAL").ok(), std::env::var("EDITOR").ok())
+    }
 }
 
 fn get_editor_internal(visual: Option<String>, editor: Option<String>) -> String {
@@ -376,6 +383,18 @@ mod tests {
     }
 
     #[test]
+    fn no_panic_when_editor_unparseable() {
+        let outcome = edit_configuration(Some("\"vim"));
+        assert!(outcome.is_err());
+    }
+
+    #[test]
+    fn no_panic_when_editor_not_found() {
+        let outcome = edit_configuration(Some("this_editor_does_not_exist"));
+        assert!(outcome.is_err());
+    }
+
+    #[test]
     fn test_extract_toml_paths() {
         let config = toml::toml! {
             extract_root = true
@@ -414,9 +433,9 @@ mod tests {
         let actual_config = extract_toml_paths(
             config,
             &[
-                "extract_root",
-                "extract_section",
-                "extract_subsection.extracted",
+                "extract_root".to_owned(),
+                "extract_section".to_owned(),
+                "extract_subsection.extracted".to_owned(),
             ],
         );
 

@@ -2,8 +2,8 @@
 home: true
 heroImage: /logo.svg
 heroText:
-tagline: 轻量级、反应迅速，可定制的高颜值终端！
-actionText: 入门 →
+tagline: 轻量级、反应迅速、可无限定制的高颜值终端！
+actionText: 快速上手 →
 actionLink: ./guide/
 features:
   - 
@@ -15,10 +15,10 @@ features:
   - 
     title: 可自定义
     details: 每个小细节都可以按您喜欢的自定义，不论是最小化以求速度，还是最大化以获得最完善的功能。
-footer: ISC Licensed | Copyright © 2019-present Starship Contributors
+footer: ISC 许可 | 版权所有 © 2019 - 目前 Starship 贡献者
 #Used for the description meta tag, for SEO
 metaTitle: "Starship：可用于各种 Shell 的提示符"
-description: Starship is the minimal, blazing fast, and extremely customizable prompt for any shell! Shows the information you need, while staying sleek and minimal. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, and PowerShell.
+description: Starship是一款轻量级、反应迅速、可自定义的高颜值终端！ 只显示所需要的信息，将优雅和轻量化合二为一。 可以为Bash、Fish、ZSH、Ion、Tcsh、Elvish、Nu、Xonsh、Cmd和PowerShell执行快速安装。
 ---
 
 <div class="center">
@@ -30,7 +30,7 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
 ### 前置要求
 
-- A [Nerd Font](https://www.nerdfonts.com/) installed and enabled in your terminal.
+- 安装并在你的终端启用 [Nerd Font](https://www.nerdfonts.com/) 。
 
 ### 快速安装
 
@@ -42,9 +42,10 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
    使用 Shell 命令：
 
    ```sh
-   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
+   curl -sS https://starship.rs/install.sh | sh
    ```
-   To update the Starship itself, rerun the above script. It will replace the current version without touching Starship's configuration.
+
+   自更新 Starship ，运行下面脚本 将会在不改动 Starship 配置文件的情况下升级版本
 
 
    #### 通过软件包管理器安装
@@ -119,9 +120,13 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Elvish
 
-   ::: warning Only elvish v0.15 or higher is supported. :::
+   ::: warning
 
-   Add the following to the end of `~/.elvish/rc.elv`:
+   仅支持 elvish 0.18 及更高的版本。
+
+   :::
+
+   在 `~/.config/fish/rc.elv` 的最后，添加以下内容：
 
    ```sh
    # ~/.elvish/rc.elv
@@ -132,7 +137,7 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Tcsh
 
-   Add the following to the end of `~/.tcshrc`:
+   在 `~/.bashhrc` 的最后，添加以下内容：
 
    ```sh
    # ~/.tcshrc
@@ -143,24 +148,41 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Nushell
 
-   ::: warning This will change in the future. Only nu version v0.33 or higher is supported. ::: Add the following to your nu config file. You can check the location of this file by running `config path` in nu.
+   ::: warning
 
-   ```toml
-   startup = [
-    "mkdir ~/.cache/starship",
-    "starship init nu | save ~/.cache/starship/init.nu",
-    "source ~/.cache/starship/init.nu"
-   ]
-   prompt = "starship_prompt"
+   这部分今后可能会改变。 仅支持 Nushell v0.61+。
+
+   :::
+
+   将以下内容添加到您 Nushell 环境文件的末尾（使用 `$nu.env-path` 来获取它的路径）：
+   ```sh
+   mkdir ~/.cache/starship
+   starship init nu | save ~/.cache/starship/init.nu
    ```
 
+   然后将以下内容添加到您 Nushell 配置文件的末尾（使用 `$nu.config-path` 来获取它的路径）：
+
+   ```sh
+   source ~/.cache/starship/init.nu
+   ```
 
    #### Xonsh
 
-   Add the following to the end of `~/.xonshrc`:
+   在 `~/.bashhrc` 的最后，添加以下内容：
 
    ```sh
    # ~/.xonshrc
 
    execx($(starship init xonsh))
+   ```
+
+
+   #### Cmd
+
+   您需要使用 [Clink](https://chrisant996.github.io/clink/clink.html) (v1.2.30+) 与 Cmd. 将以下文件添加到文件 `starship.lua` 中，并将此文件放置在 Clink脚本目录中：
+
+   ```lua
+   -- starship.lua
+
+   load(io.popen('starship init cmd'):read("*a"))()
    ```

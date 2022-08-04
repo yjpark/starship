@@ -1,4 +1,4 @@
-# 🚀 進階安裝
+# 進階安裝
 
 要安裝 starship，你必須做兩件事：
 
@@ -32,7 +32,7 @@ pkg install getconf
 ### 安裝
 
 ```sh
-sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --bin-dir /data/data/com.termux/files/usr/bin
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir /data/data/com.termux/files/usr/bin
 ```
 
 ## [Funtoo Linux](https://www.funtoo.org/Welcome)
@@ -47,7 +47,7 @@ emerge app-shells/starship
 
 ## [Nix](https://nixos.wiki/wiki/Nix)
 
-### Getting the Binary
+### 獲得執行檔
 
 #### 命令式
 
@@ -57,13 +57,12 @@ nix-env -iA nixos.starship
 
 #### 聲明式、單個使用者，使用 [home-manager](https://github.com/nix-community/home-manager)
 
-Enable the `programs.starship` module in your `home.nix` file, and add your settings
+在 `home.nix` 檔案中，啟用 `programs.starship` 模組，並且添加你的設定：
 
 ```nix
 {
   programs.starship = {
     enable = true;
-    enableZshIntegration = true;
     # Configuration written to ~/.config/starship.toml
     settings = {
       # add_newline = false;
@@ -79,7 +78,7 @@ Enable the `programs.starship` module in your `home.nix` file, and add your sett
 }
 ```
 
-then run
+然後執行
 
 ```sh
 home-manager switch
@@ -87,7 +86,7 @@ home-manager switch
 
 #### 聲明式、全系統，使用 NixOS
 
-Add `pkgs.starship` to `environment.systemPackages` in your `configuration.nix`, then run
+將 `pkgs.starship` 添加至 `configuration.nix` 檔案內的 `environment.systemPackages` 下，並且執行
 
 ```sh
 sudo nixos-rebuild switch

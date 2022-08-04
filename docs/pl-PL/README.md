@@ -3,22 +3,22 @@ home: true
 heroImage: /logo.svg
 heroText:
 tagline: Minimalny, szybki i nieskończenie konfigurowalny wiersz poleceń dla dowolnej powłoki!
-actionText: Get Started →
+actionText: Pierwsze kroki →
 actionLink: ./guide/
 features:
   - 
     title: Kompatybilność przede wszystkim
-    details: Works on the most common shells on the most common operating systems. Use it everywhere!
+    details: Działa na większości powszechnych powłokach, na większości najpopularniejszych systemach. Używaj go wszędzie!
   - 
     title: Napędzany językiem Rust
-    details: Brings the best-in-class speed and safety of Rust, to make your prompt as quick and reliable as possible.
+    details: Zapewnia najlepszą w swojej klasie prędkość i bezpieczeństwo języka Rust, w celu zapewnienia jak najszybszej i niezawodnej odpowiedzi.
   - 
     title: Konfigurowalny
-    details: Every little detail is customizable to your liking, to make this prompt as minimal or feature-rich as you'd like it to be.
-footer: ISC Licensed | Copyright © 2019-present Starship Contributors
+    details: Każdy mały detal jest konfigurowalny do Twoich preferencji, aby wiersz poleceń był tak minimalny lub tak bogaty w funkcje, jak tylko zechcesz.
+footer: Licencja ISC | Copyright © 2019-obecnie Kontrybutorzy Starship
 #Used for the description meta tag, for SEO
-metaTitle: "Starship: Cross-Shell Prompt"
-description: Starship is the minimal, blazing fast, and extremely customizable prompt for any shell! Shows the information you need, while staying sleek and minimal. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, and PowerShell.
+metaTitle: "Starship: Wiersz poleceń dla dowolnej powłoki"
+description: Starship to minimalny, szybki i ekstremalnie konfigurowalny wiersz poleceń dla każdej powłoki! Pokazuje informacje których potrzebujesz, pozostając elegancki i minimalny. Szybka instalacja dostępna dla powłok Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, Cmd i PowerShell.
 ---
 
 <div class="center">
@@ -30,26 +30,27 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
 ### Wymagania wstępne
 
-- A [Nerd Font](https://www.nerdfonts.com/) installed and enabled in your terminal.
+- Czcionka typu [Nerd Font](https://www.nerdfonts.com/) zainstalowana i włączona w twoim terminalu.
 
-### Quick Install
+### Instalacja
 
 1. Zainstaluj plik programu **starship**:
 
 
    #### Instalacja najnowszej wersji
 
-   With Shell:
+   Za pomocą powłoki:
 
    ```sh
-   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
+   curl -sS https://starship.rs/install.sh | sh
    ```
+
    Aby zaktualizować Starship, uruchom ponownie powyższy skrypt. Obecna wersja zostanie zastąpiona nową, bez modyfikowania konfiguracji Starship.
 
 
    #### Instalacja za pomocą menedżera pakietów
 
-   With [Homebrew](https://brew.sh/):
+   Za pomocą [Homebrew](https://brew.sh/):
 
    ```sh
    brew install starship
@@ -119,7 +120,11 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Elvish
 
-   ::: warning Only elvish v0.15 or higher is supported. :::
+   ::: uwaga
+
+   Działa tylko dla elvish v0.18 albo wyższej wersji.
+
+   :::
 
    Dodaj na koniec pliku `~/.elvish/rc.elv`:
 
@@ -143,17 +148,23 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Nushell
 
-   ::: warning This will change in the future. Działa tylko dla wersji powłoki nu v0.33 lub wyższej. ::: Add the following to your nu config file. Możesz sprawdzić lokalizację tego pliku wywołując polecenie `config path` w powłoce nu.
+   ::: uwaga
 
-   ```toml
-   startup = [
-    "mkdir ~/.cache/starship",
-    "starship init nu | save ~/.cache/starship/init.nu",
-    "source ~/.cache/starship/init.nu"
-   ]
-   prompt = "starship_prompt"
+   Ten sposób zmieni się w przyszłości. Działa tylko na Nushell v0.61+.
+
+   :::
+
+   Dodaj następujący kod na koniec Twojego pliku Nushell env (możesz go znaleźć uruchamiając `$nu.env-path` w Nushell):
+   ```sh
+   mkdir ~/.cache/starship
+   starship init nu | save ~/.cache/starship/init.nu
    ```
 
+   Dodaj następujący kod na koniec Twojego pliku konfiguracyjnego Nushell (możesz go znaleźć uruchamiając `$nu.config-path`):
+
+   ```sh
+   source ~/.cache/starship/init.nu
+   ```
 
    #### Xonsh
 
@@ -163,4 +174,15 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
    # ~/.xonshrc
 
    execx($(starship init xonsh))
+   ```
+
+
+   #### Cmd
+
+   Musisz użyć [Clink](https://chrisant996.github.io/clink/clink.html) (v1.2.30+) z Cmd. Dodaj następujący kod do pliku `starship.lua` i przenieś ten plik do folderu ze skryptami Clink:
+
+   ```lua
+   -- starship.lua
+
+   load(io.popen('starship init cmd'):read("*a"))()
    ```
