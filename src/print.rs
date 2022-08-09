@@ -117,7 +117,7 @@ pub fn get_prompt(context: Context) -> String {
         // continuation prompts normally do not include newlines, but they can
         writeln!(buf).unwrap();
     }
-    if context.width > 0 {
+    if config.add_separator && context.width > 0 {
         let line = std::iter::repeat("═").take(context.width).collect::<String>();
         write!(buf, "{}\n", line).unwrap();
     }

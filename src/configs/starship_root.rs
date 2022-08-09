@@ -12,6 +12,7 @@ pub struct StarshipRootConfig {
     pub scan_timeout: u64,
     pub command_timeout: u64,
     pub add_newline: bool,
+    pub add_separator: bool,
 }
 
 // List of default prompt order
@@ -107,6 +108,7 @@ impl<'a> Default for StarshipRootConfig {
             scan_timeout: 30,
             command_timeout: 500,
             add_newline: true,
+            add_separator: false,
         }
     }
 }
