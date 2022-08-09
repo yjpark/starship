@@ -40,11 +40,15 @@ impl StarshipPath {
         self.str_path().map(|p| shell_words::quote(p).into_owned())
     }
 
-    /// PowerShell specific path escaping
+    /// `PowerShell` specific path escaping
     fn sprint_pwsh(&self) -> io::Result<String> {
         self.str_path()
-            .map(|s| s.replace("'", "''"))
+            .map(|s| s.replace('\'', "''"))
             .map(|s| format!("'{}'", s))
+    }
+    /// Command Shell specific path escaping
+    fn sprint_cmdexe(&self) -> io::Result<String> {
+        self.str_path().map(|s| format!("\"{}\"", s))
     }
     fn sprint_posix(&self) -> io::Result<String> {
         // On non-Windows platform, return directly.
@@ -59,7 +63,7 @@ impl StarshipPath {
                 if e.kind() != io::ErrorKind::NotFound {
                     log::warn!("Failed to convert \"{}\" to unix path:\n{:?}", str_path, e);
                 }
-                // Failed to execute cygpath.exe means there're not inside cygwin evironment,return directly.
+                // Failed to execute cygpath.exe means there're not inside cygwin environment,return directly.
                 return self.sprint();
             }
         };
@@ -167,11 +171,12 @@ pub fn init_stub(shell_name: &str) -> io::Result<()> {
             r#"eval `({} init tcsh --print-full-init)`"#,
             starship.sprint_posix()?
         ),
-        "nu" => print_script(NU_INIT, &StarshipPath::init()?.sprint_posix()?),
+        "nu" => print_script(NU_INIT, &StarshipPath::init()?.sprint()?),
         "xonsh" => print!(
             r#"execx($({} init xonsh --print-full-init))"#,
             starship.sprint_posix()?
         ),
+        "cmd" => print_script(CMDEXE_INIT, &StarshipPath::init()?.sprint_cmdexe()?),
         _ => {
             eprintln!(
                 "{0} is not yet supported by starship.\n\
@@ -185,6 +190,7 @@ pub fn init_stub(shell_name: &str) -> io::Result<()> {
                  * zsh\n\
                  * nu\n\
                  * xonsh\n\
+                 * cmd\n\
                  \n\
                  Please open an issue in the starship repo if you would like to \
                  see support for {0}:\n\
@@ -259,6 +265,8 @@ const NU_INIT: &str = include_str!("starship.nu");
 
 const XONSH_INIT: &str = include_str!("starship.xsh");
 
+const CMDEXE_INIT: &str = include_str!("starship.lua");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +285,27 @@ mod tests {
             native_path: PathBuf::from(r"C:\'starship.exe"),
         };
         assert_eq!(starship_path.sprint_pwsh()?, r"'C:\''starship.exe'");
+        Ok(())
+    }
+
+    #[test]
+    fn escape_cmdexe() -> io::Result<()> {
+        let starship_path = StarshipPath {
+            native_path: PathBuf::from(r"C:\starship.exe"),
+        };
+        assert_eq!(starship_path.sprint_cmdexe()?, r#""C:\starship.exe""#);
+        Ok(())
+    }
+
+    #[test]
+    fn escape_space_cmdexe() -> io::Result<()> {
+        let starship_path = StarshipPath {
+            native_path: PathBuf::from(r"C:\Cool Tools\starship.exe"),
+        };
+        assert_eq!(
+            starship_path.sprint_cmdexe()?,
+            r#""C:\Cool Tools\starship.exe""#
+        );
         Ok(())
     }
 }

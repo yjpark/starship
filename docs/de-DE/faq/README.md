@@ -1,4 +1,4 @@
-# FAQ
+# Frequently Asked Questions
 
 ## Wie ist die Konfiguration im Demo GIF?
 
@@ -53,12 +53,12 @@ Die Eingabeaufforderung verwendet so viel Kontext wie möglich, aber keine Flagg
 If you get an error like "_version 'GLIBC_2.18' not found (required by starship)_" when using the prebuilt binary (for example, on CentOS 6 or 7), you can use a binary compiled with `musl` instead of `glibc`:
 
 ```sh
-sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --platform unknown-linux-musl
+curl -sS https://starship.rs/install.sh | sh -s -- --platform unknown-linux-musl
 ```
 
 ## Why do I see `Executing command "..." timed out.` warnings?
 
-Starship executes different commands to get information to display in the prompt, for example the version of a program or the current git status. To make sure starship doesn't hang while trying to execute these commands we set a time limit, if a command takes longer than this limit starship will stop the execution of the command and output the above warning, this is expected behaviour. This time limit is configurable using the [`command_timeout` key](/config/#prompt) so if you want you can increase the time limit. You can also follow the debugging steps below to see which command is being slow and see if you can optimise it. Finally you can set the `STARSHIP_LOG` env var to `error` to hide these warnings.
+Starship executes different commands to get information to display in the prompt, for example the version of a program or the current git status. To make sure starship doesn't hang while trying to execute these commands we set a time limit, if a command takes longer than this limit starship will stop the execution of the command and output the above warning, this is expected behaviour. This time limit is configurable using the [`command_timeout`key](/config/#prompt) so if you want you can increase the time limit. You can also follow the debugging steps below to see which command is being slow and see if you can optimise it. Finally you can set the `STARSHIP_LOG` env var to `error` to hide these warnings.
 
 ## I see symbols I don't understand or expect, what do they mean?
 
@@ -69,13 +69,13 @@ If you see symbols that you don't recognise you can use `starship explain` to ex
 You can enable the debug logs by using the `STARSHIP_LOG` env var. These logs can be very verbose so it is often useful to use the `module` command if you are trying to debug a particular module, for example, if you are trying to debug the `rust` module you could run the following command to get the trace logs and output from the module.
 
 ```sh
-env STARHIP_LOG=trace starship module rust
+env STARSHIP_LOG=trace starship module rust
 ```
 
 If starship is being slow you can try using the `timings` command to see if there is a particular module or command that to blame.
 
 ```sh
-env STARHIP_LOG=trace starship timings
+env STARSHIP_LOG=trace starship timings
 ```
 
 This will output the trace log and a breakdown of all modules that either took more than 1ms to execute or produced some output.
@@ -88,13 +88,13 @@ starship bug-report
 
 ## Why don't I see a glyph symbol in my prompt?
 
-The most common cause of this is system misconfiguration. Some Linux distros in particular do not come with font support out-of-the-box. You need to ensure that:
+The most common cause of this is system misconfiguration. Some Linux distros in particular do not come with font support out-of-the-box. Sie müssen sicherstellen, dass:
 
 - Your locale is set to a UTF-8 value, like `de_DE.UTF-8` or `ja_JP.UTF-8`. Wenn `LC_ALL` kein UTF-8-Wert ist, [müssen Sie ihn ändern](https://www.tecmint.com/set-system-locales-in-linux/).
 - You have an emoji font installed. Most systems come with an emoji font by default, but some (notably Arch Linux) do not. You can usually install one through your system's package manager--[noto emoji](https://www.google.com/get/noto/help/emoji/) is a popular choice.
 - You are using a [Nerd Font](https://www.nerdfonts.com/).
 
-To test your system, run the following commands in a terminal:
+Um Ihr System zu testen, führen Sie folgende Befehle in einem Terminal aus:
 
 ```sh
 echo -e "\xf0\x9f\x90\x8d"
@@ -103,20 +103,20 @@ echo -e "\xee\x82\xa0"
 
 The first line should produce a [snake emoji](https://emojipedia.org/snake/), while the second should produce a [powerline branch symbol (e0a0)](https://github.com/ryanoasis/powerline-extra-symbols#glyphs).
 
-If either symbol fails to display correctly, your system is still misconfigured. Unfortunately, getting font configuration correct is sometimes difficult. Users on the Discord may be able to help. If both symbols display correctly, but you still don't see them in starship, [file a bug report!](https://github.com/starship/starship/issues/new/choose)
+If either symbol fails to display correctly, your system is still misconfigured. Unfortunately, getting font configuration correct is sometimes difficult. Benutzer auf dem Discord können vielleicht helfen. If both symbols display correctly, but you still don't see them in starship, [file a bug report!](https://github.com/starship/starship/issues/new/choose)
 
-## How do I uninstall Starship?
+## Wie deinstalliere ich Starship?
 
-Starship is just as easy to uninstall as it is to install in the first place.
+Starship ist genauso einfach zu deinstallieren wie zu installieren.
 
 1. Remove any lines in your shell config (e.g. `~/.bashrc`) used to initialize Starship.
 1. Löschen Sie die Starship-Binary.
 
 If Starship was installed using a package manager, please refer to their docs for uninstallation instructions.
 
-If Starship was installed using the install script, the following command will delete the binary:
+Wenn Starship mit Hilfe des Installationsscripts installiert wurde, entfernt der folgende Befehl Starship:
 
 ```sh
 # Locate and delete the starship binary
-sh -c 'rm "$(which starship)"'
+sh -c 'rm "$(command -v 'starship')"'
 ```

@@ -1,9 +1,8 @@
-use crate::config::ModuleConfig;
+use serde::{Deserialize, Serialize};
 
-use serde::Serialize;
-use starship_module_config_derive::ModuleConfig;
-
-#[derive(Clone, ModuleConfig, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "config-schema", derive(schemars::JsonSchema))]
+#[serde(default)]
 pub struct ShellConfig<'a> {
     pub format: &'a str,
     pub bash_indicator: &'a str,
@@ -15,6 +14,7 @@ pub struct ShellConfig<'a> {
     pub tcsh_indicator: &'a str,
     pub nu_indicator: &'a str,
     pub xonsh_indicator: &'a str,
+    pub cmd_indicator: &'a str,
     pub unknown_indicator: &'a str,
     pub style: &'a str,
     pub disabled: bool,
@@ -33,6 +33,7 @@ impl<'a> Default for ShellConfig<'a> {
             tcsh_indicator: "tsh",
             nu_indicator: "nu",
             xonsh_indicator: "xsh",
+            cmd_indicator: "cmd",
             unknown_indicator: "",
             style: "white bold",
             disabled: true,

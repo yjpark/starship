@@ -1,9 +1,8 @@
-use crate::config::ModuleConfig;
+use serde::{Deserialize, Serialize};
 
-use serde::Serialize;
-use starship_module_config_derive::ModuleConfig;
-
-#[derive(Clone, ModuleConfig, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "config-schema", derive(schemars::JsonSchema))]
+#[serde(default)]
 pub struct StatusConfig<'a> {
     pub format: &'a str,
     pub symbol: &'a str,
@@ -18,6 +17,8 @@ pub struct StatusConfig<'a> {
     pub pipestatus: bool,
     pub pipestatus_separator: &'a str,
     pub pipestatus_format: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipestatus_segment_format: Option<&'a str>,
     pub disabled: bool,
 }
 
@@ -26,7 +27,7 @@ impl<'a> Default for StatusConfig<'a> {
         StatusConfig {
             format: "[$symbol$status]($style) ",
             symbol: "✖",
-            success_symbol: "✔️",
+            success_symbol: "",
             not_executable_symbol: "🚫",
             not_found_symbol: "🔍",
             sigint_symbol: "🧱",
@@ -38,6 +39,7 @@ impl<'a> Default for StatusConfig<'a> {
             pipestatus_separator: "|",
             pipestatus_format:
                 "\\[$pipestatus\\] => [$symbol$common_meaning$signal_name$maybe_int]($style)",
+            pipestatus_segment_format: None,
             disabled: true,
         }
     }

@@ -1,4 +1,4 @@
-use process_control::{ChildExt, Timeout};
+use process_control::{ChildExt, Control};
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::fs::read_to_string;
@@ -7,7 +7,31 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::context::Context;
 use crate::context::Shell;
+
+/// Create a `PathBuf` from an absolute path, where the root directory will be mocked in test
+#[cfg(not(test))]
+#[inline]
+#[allow(dead_code)]
+pub fn context_path<S: AsRef<OsStr> + ?Sized>(_context: &Context, s: &S) -> PathBuf {
+    PathBuf::from(s)
+}
+
+/// Create a `PathBuf` from an absolute path, where the root directory will be mocked in test
+#[cfg(test)]
+#[allow(dead_code)]
+pub fn context_path<S: AsRef<OsStr> + ?Sized>(context: &Context, s: &S) -> PathBuf {
+    let requested_path = PathBuf::from(s);
+
+    if requested_path.is_absolute() {
+        let mut path = PathBuf::from(context.root_dir.path());
+        path.extend(requested_path.components().skip(1));
+        path
+    } else {
+        requested_path
+    }
+}
 
 /// Return the string contents of a file
 pub fn read_file<P: AsRef<Path> + Debug>(file_name: P) -> Result<String> {
@@ -35,10 +59,10 @@ pub fn get_command_string_output(command: CommandOutput) -> String {
 
 /// Attempt to resolve `binary_name` from and creates a new `Command` pointing at it
 /// This allows executing cmd files on Windows and prevents running executable from cwd on Windows
-/// This function also initialises std{err,out,in} to protect against processes changing the console mode
+/// This function also initializes std{err,out,in} to protect against processes changing the console mode
 pub fn create_command<T: AsRef<OsStr>>(binary_name: T) -> Result<Command> {
     let binary_name = binary_name.as_ref();
-    log::trace!("Creating Command struct with binary name {:?}", binary_name);
+    log::trace!("Creating Command for binary {:?}", binary_name);
 
     let full_path = match which::which(binary_name) {
         Ok(full_path) => {
@@ -51,7 +75,7 @@ pub fn create_command<T: AsRef<OsStr>>(binary_name: T) -> Result<Command> {
         }
     };
 
-    #[allow(clippy::disallowed_method)]
+    #[allow(clippy::disallowed_methods)]
     let mut cmd = Command::new(full_path);
     cmd.stderr(Stdio::piped())
         .stdout(Stdio::piped())
@@ -78,30 +102,65 @@ pub fn display_command<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
     args: &[U],
 ) -> String {
     std::iter::once(cmd.as_ref())
-        .chain(args.iter().map(|i| i.as_ref()))
+        .chain(args.iter().map(std::convert::AsRef::as_ref))
         .map(|i| i.to_string_lossy().into_owned())
         .collect::<Vec<String>>()
         .join(" ")
 }
 
 /// Execute a command and return the output on stdout and stderr if successful
-#[cfg(not(test))]
 pub fn exec_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
     cmd: T,
     args: &[U],
     time_limit: Duration,
 ) -> Option<CommandOutput> {
+    log::trace!("Executing command {:?} with args {:?}", cmd, args);
+    #[cfg(test)]
+    if let Some(o) = mock_cmd(&cmd, args) {
+        return o;
+    }
     internal_exec_cmd(cmd, args, time_limit)
 }
 
 #[cfg(test)]
-pub fn exec_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
+pub fn mock_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
     cmd: T,
     args: &[U],
-    time_limit: Duration,
-) -> Option<CommandOutput> {
+) -> Option<Option<CommandOutput>> {
     let command = display_command(&cmd, args);
-    match command.as_str() {
+    let out = match command.as_str() {
+        "bun --version"=> Some(CommandOutput {
+            stdout: String::from("0.1.4\n"),
+            stderr: String::default(),
+        }),
+        "buf --version" => Some(CommandOutput {
+            stdout: String::from("1.0.0"),
+            stderr: String::default(),
+        }),
+        "cc --version" => Some(CommandOutput {
+            stdout: String::from("\
+FreeBSD clang version 11.0.1 (git@github.com:llvm/llvm-project.git llvmorg-11.0.1-0-g43ff75f2c3fe)
+Target: x86_64-unknown-freebsd13.0
+Thread model: posix
+InstalledDir: /usr/bin"),
+            stderr: String::default(),
+        }),
+        "gcc --version" => Some(CommandOutput {
+            stdout: String::from("\
+cc (Debian 10.2.1-6) 10.2.1 20210110
+Copyright (C) 2020 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."),
+            stderr: String::default(),
+        }),
+        "clang --version" => Some(CommandOutput {
+            stdout: String::from("\
+OpenBSD clang version 11.1.0
+Target: amd64-unknown-openbsd7.0
+Thread model: posix
+InstalledDir: /usr/bin"),
+            stderr: String::default(),
+        }),
         "cobc -version" => Some(CommandOutput {
             stdout: String::from("\
 cobc (GnuCOBOL) 3.1.2.0
@@ -154,6 +213,10 @@ Elixir 1.10 (compiled with Erlang/OTP 22)\n",
         }),
         "go version" => Some(CommandOutput {
             stdout: String::from("go version go1.12.1 linux/amd64\n"),
+            stderr: String::default(),
+        }),
+        "ghc --numeric-version" => Some(CommandOutput {
+            stdout: String::from("9.2.1\n"),
             stderr: String::default(),
         }),
         "helm version --short --client" => Some(CommandOutput {
@@ -260,6 +323,15 @@ For more information about these matters see
 https://www.gnu.org/licenses/."#
             ),
         }),
+        "raku --version" => Some(CommandOutput {
+            stdout: String::from(
+                "\
+Welcome to Rakudo™ v2021.12.
+Implementing the Raku® Programming Language v6.d.
+Built on MoarVM version 2021.12.\n",
+            ),
+            stderr: String::default(),
+        }),
         "red --version" => Some(CommandOutput {
             stdout: String::from("0.6.4\n"),
             stderr: String::default()
@@ -313,9 +385,9 @@ CMake suite maintained and supported by Kitware (kitware.com/cmake).\n",
             stdout: String::from("22.1.3\n"),
             stderr: String::default(),
         }),
-        // If we don't have a mocked command fall back to executing the command
-        _ => internal_exec_cmd(&cmd, args, time_limit),
-    }
+        _ => return None,
+    };
+    Some(out)
 }
 
 /// Wraps ANSI color escape sequences in the shell-appropriate wrappers.
@@ -376,37 +448,26 @@ fn internal_exec_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
     args: &[U],
     time_limit: Duration,
 ) -> Option<CommandOutput> {
-    log::trace!("Executing command {:?} with args {:?}", cmd, args);
+    let mut cmd = create_command(cmd).ok()?;
+    cmd.args(args);
+    exec_timeout(&mut cmd, time_limit)
+}
 
-    let full_path = match which::which(&cmd) {
-        Ok(full_path) => {
-            log::trace!("Using {:?} as {:?}", full_path, cmd);
-            full_path
-        }
-        Err(error) => {
-            log::trace!("Unable to find {:?} in PATH, {:?}", cmd, error);
-            return None;
-        }
-    };
-
+pub fn exec_timeout(cmd: &mut Command, time_limit: Duration) -> Option<CommandOutput> {
     let start = Instant::now();
-
-    #[allow(clippy::disallowed_method)]
-    let process = match Command::new(full_path)
-        .args(args)
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stdin(Stdio::null())
-        .spawn()
-    {
+    let process = match cmd.spawn() {
         Ok(process) => process,
         Err(error) => {
-            log::info!("Unable to run {:?}, {:?}", cmd, error);
+            log::info!("Unable to run {:?}, {:?}", cmd.get_program(), error);
             return None;
         }
     };
-
-    match process.with_output_timeout(time_limit).terminating().wait() {
+    match process
+        .controlled_with_output()
+        .time_limit(time_limit)
+        .terminate_for_timeout()
+        .wait()
+    {
         Ok(Some(output)) => {
             let stdout_string = match String::from_utf8(output.stdout) {
                 Ok(stdout) => stdout,
@@ -441,12 +502,16 @@ fn internal_exec_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
             })
         }
         Ok(None) => {
-            log::warn!("Executing command {:?} timed out.", cmd);
+            log::warn!("Executing command {:?} timed out.", cmd.get_program());
             log::warn!("You can set command_timeout in your config to a higher value to allow longer-running commands to keep executing.");
             None
         }
         Err(error) => {
-            log::info!("Executing command {:?} failed by: {:?}", cmd, error);
+            log::info!(
+                "Executing command {:?} failed by: {:?}",
+                cmd.get_program(),
+                error
+            );
             None
         }
     }
@@ -454,6 +519,11 @@ fn internal_exec_cmd<T: AsRef<OsStr> + Debug, U: AsRef<OsStr> + Debug>(
 
 // Render the time into a nice human-readable string
 pub fn render_time(raw_millis: u128, show_millis: bool) -> String {
+    // Make sure it renders something if the time equals zero instead of an empty string
+    if raw_millis == 0 {
+        return "0ms".into();
+    }
+
     // Calculate a simple breakdown into days/hours/minutes/seconds/milliseconds
     let (millis, raw_seconds) = (raw_millis % 1000, raw_millis / 1000);
     let (seconds, raw_minutes) = (raw_seconds % 60, raw_seconds / 60);
@@ -483,7 +553,7 @@ fn render_time_component((component, suffix): (&u128, &&str)) -> String {
 }
 
 pub fn home_dir() -> Option<PathBuf> {
-    directories_next::BaseDirs::new().map(|base_dirs| base_dirs.home_dir().to_owned())
+    dirs_next::home_dir()
 }
 
 const HEXTABLE: &[char] = &[
@@ -505,6 +575,10 @@ pub fn encode_to_hex(slice: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_0ms() {
+        assert_eq!(render_time(0_u128, true), "0ms")
+    }
     #[test]
     fn test_500ms() {
         assert_eq!(render_time(500_u128, true), "500ms")

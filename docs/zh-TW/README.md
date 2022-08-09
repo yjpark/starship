@@ -18,7 +18,7 @@ features:
 footer: ISC Licensed | Copyright © 2019-present Starship Contributors
 #Used for the description meta tag, for SEO
 metaTitle: "Starship：跨 Shell 提示字元"
-description: Starship 是適合任何 shell 的最小、極速、高度客製化的提示字元！ 顯示你需要的訊息，同時保持順暢與最小化。 針對 Bash、Fish、ZSH、Ion、Tcsh、Elvish、Nu、Xonsh 以及 Powershell 有快速安裝可供使用。
+description: Starship 是適合任何 shell 的最小、極速、高度客製化的提示字元！ 顯示你需要的訊息，同時保持順暢與最小化。 Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, Cmd, and PowerShell.
 ---
 
 <div class="center">
@@ -42,8 +42,9 @@ description: Starship 是適合任何 shell 的最小、極速、高度客製化
    使用 Shell 安裝：
 
    ```sh
-   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
+   curl -sS https://starship.rs/install.sh | sh
    ```
+
    如果想更新已安裝的 Starship，請重新執行上述指令。 指令只會更新 Starship 執行檔本身，不會影響到任何已撰寫的設定檔。
 
 
@@ -119,7 +120,11 @@ description: Starship 是適合任何 shell 的最小、極速、高度客製化
 
    #### Elvish
 
-   ::: warning 只有 elvish v0.15 或以上版本才有支援 :::
+   ::: warning
+
+   Only elvish v0.18 or higher is supported.
+
+   :::
 
    將以下內容放到 `~/.elvish/rc.elv` 的結尾：
 
@@ -143,24 +148,41 @@ description: Starship 是適合任何 shell 的最小、極速、高度客製化
 
    #### Nushell
 
-   ::: warning 這項設定可能在未來改變 只支援 nu v0.33 以上的版本。 ::: 將以下內容放到你的 nu 設定檔裡， 你可以透過在 nu 執行 `config path` 指令來取得設定檔的位置。
+   ::: warning
 
-   ```toml
-   startup = [
-    "mkdir ~/.cache/starship",
-    "starship init nu | save ~/.cache/starship/init.nu",
-    "source ~/.cache/starship/init.nu"
-   ]
-   prompt = "starship_prompt"
+   This will change in the future. Only Nushell v0.61+ is supported.
+
+   :::
+
+   Add the following to to the end of your Nushell env file (find it by running `$nu.env-path` in Nushell):
+   ```sh
+   mkdir ~/.cache/starship
+   starship init nu | save ~/.cache/starship/init.nu
    ```
 
+   And add the following to the end of your Nushell configuration (find it by running `$nu.config-path`):
+
+   ```sh
+   source ~/.cache/starship/init.nu
+   ```
 
    #### Xonsh
 
-   將以下內容放到 `~/.xonshrc` 的結尾：
+   將以下內容加到 `~/.xonshrc` 的結尾：
 
    ```sh
    # ~/.xonshrc
 
    execx($(starship init xonsh))
+   ```
+
+
+   #### Cmd
+
+   You need to use [Clink](https://chrisant996.github.io/clink/clink.html) (v1.2.30+) with Cmd. Add the following to a file `starship.lua` and place this file in Clink scripts directory:
+
+   ```lua
+   -- starship.lua
+
+   load(io.popen('starship init cmd'):read("*a"))()
    ```

@@ -1,4 +1,4 @@
-use super::{Context, Module, RootModuleConfig};
+use super::{Context, Module, ModuleConfig};
 
 use crate::configs::deno::DenoConfig;
 use crate::formatter::StringFormatter;
@@ -79,6 +79,26 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let actual = ModuleRenderer::new("deno").path(dir.path()).collect();
         let expected = None;
+        assert_eq!(expected, actual);
+        dir.close()
+    }
+
+    #[test]
+    fn folder_with_deno_json() -> io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        File::create(dir.path().join("deno.json"))?.sync_all()?;
+        let actual = ModuleRenderer::new("deno").path(dir.path()).collect();
+        let expected = Some(format!("via {}", Color::Green.bold().paint("🦕 v1.8.3 ")));
+        assert_eq!(expected, actual);
+        dir.close()
+    }
+
+    #[test]
+    fn folder_with_deno_jsonc() -> io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        File::create(dir.path().join("deno.jsonc"))?.sync_all()?;
+        let actual = ModuleRenderer::new("deno").path(dir.path()).collect();
+        let expected = Some(format!("via {}", Color::Green.bold().paint("🦕 v1.8.3 ")));
         assert_eq!(expected, actual);
         dir.close()
     }

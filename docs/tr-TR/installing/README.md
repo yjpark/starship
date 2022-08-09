@@ -1,4 +1,4 @@
-# 🚀 Gelişmiş Kurulum
+# Gelişmiş Kurulum
 
 Starship'i kurmak için, 2 şeye ihtiyacınız var:
 
@@ -11,7 +11,7 @@ Birçok platform var ki ana sisteme uymuyorlar. README.md belgesi ile diğer pla
 
 ## [Chocolatey ](https://chocolatey.org)
 
-### Ön gereklilikler
+### Ön koşullar
 
 [Chocolatey kurulum sayfasına](https://chocolatey.org/install) gidin ve Chocolatey'i yüklemek için talimatları izleyin.
 
@@ -23,7 +23,7 @@ choco install starship
 
 ## [termux](https://termux.com)
 
-### Ön gereklilikler
+### Ön koşullar
 
 ```sh
 pkg install getconf
@@ -32,7 +32,7 @@ pkg install getconf
 ### Kurulum
 
 ```sh
-sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --bin-dir /data/data/com.termux/files/usr/bin
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir /data/data/com.termux/files/usr/bin
 ```
 
 ## [Funtoo Linux](https://www.funtoo.org/Welcome)
@@ -47,7 +47,7 @@ emerge app-shells/starship
 
 ## [Nix](https://nixos.wiki/wiki/Nix)
 
-### Getting the Binary
+### Binary Alma
 
 #### Zorunlu olarak
 
@@ -57,13 +57,12 @@ nix-env -iA nixos.starship
 
 #### Açıklayıcı, tek kullanıcı, via [home-manager](https://github.com/nix-community/home-manager)
 
-Enable the `programs.starship` module in your `home.nix` file, and add your settings
+`home.nix` dosyanızda, `programs.starship` modülünü etkinleştirin, ayarlarınızı ekleyin
 
 ```nix
 {
   programs.starship = {
     enable = true;
-    enableZshIntegration = true;
     # Configuration written to ~/.config/starship.toml
     settings = {
       # add_newline = false;
@@ -79,7 +78,7 @@ Enable the `programs.starship` module in your `home.nix` file, and add your sett
 }
 ```
 
-then run
+sonra çalıştırın
 
 ```sh
 home-manager switch

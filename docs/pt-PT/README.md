@@ -18,7 +18,7 @@ features:
 footer: ISC Licensed | Copyright © 2019-present Starship Contributors
 #Used for the description meta tag, for SEO
 metaTitle: "Starship: Cross-Shell Prompt"
-description: Starship is the minimal, blazing fast, and extremely customizable prompt for any shell! Shows the information you need, while staying sleek and minimal. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, and PowerShell.
+description: Starship is the minimal, blazing fast, and extremely customizable prompt for any shell! Shows the information you need, while staying sleek and minimal. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, Cmd, and PowerShell.
 ---
 
 <div class="center">
@@ -42,8 +42,9 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
    With Shell:
 
    ```sh
-   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
+   curl -sS https://starship.rs/install.sh | sh
    ```
+
    To update the Starship itself, rerun the above script. It will replace the current version without touching Starship's configuration.
 
 
@@ -119,7 +120,11 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Elvish
 
-   ::: warning Only elvish v0.15 or higher is supported. :::
+   ::: warning
+
+   Only elvish v0.18 or higher is supported.
+
+   :::
 
    Add the following to the end of `~/.elvish/rc.elv`:
 
@@ -143,17 +148,23 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
 
    #### Nushell
 
-   ::: warning This will change in the future. Only nu version v0.33 or higher is supported. ::: Add the following to your nu config file. You can check the location of this file by running `config path` in nu.
+   ::: warning
 
-   ```toml
-   startup = [
-    "mkdir ~/.cache/starship",
-    "starship init nu | save ~/.cache/starship/init.nu",
-    "source ~/.cache/starship/init.nu"
-   ]
-   prompt = "starship_prompt"
+   This will change in the future. Only Nushell v0.61+ is supported.
+
+   :::
+
+   Add the following to to the end of your Nushell env file (find it by running `$nu.env-path` in Nushell):
+   ```sh
+   mkdir ~/.cache/starship
+   starship init nu | save ~/.cache/starship/init.nu
    ```
 
+   And add the following to the end of your Nushell configuration (find it by running `$nu.config-path`):
+
+   ```sh
+   source ~/.cache/starship/init.nu
+   ```
 
    #### Xonsh
 
@@ -163,4 +174,15 @@ description: Starship is the minimal, blazing fast, and extremely customizable p
    # ~/.xonshrc
 
    execx($(starship init xonsh))
+   ```
+
+
+   #### Cmd
+
+   You need to use [Clink](https://chrisant996.github.io/clink/clink.html) (v1.2.30+) with Cmd. Add the following to a file `starship.lua` and place this file in Clink scripts directory:
+
+   ```lua
+   -- starship.lua
+
+   load(io.popen('starship init cmd'):read("*a"))()
    ```

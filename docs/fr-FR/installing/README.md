@@ -1,4 +1,4 @@
-# 🚀 Installation avancée
+# Installation avancée
 
 Pour installer starship, vous devez faire deux choses:
 
@@ -32,14 +32,14 @@ pkg install getconf
 ### Installation
 
 ```sh
-sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --bin-dir /data/data/com.termux/files/usr/bin
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir /data/data/com.termux/files/usr/bin
 ```
 
 ## [Funtoo Linux](https://www.funtoo.org/Welcome)
 
 ### Installation
 
-On Funtoo Linux, starship can be installed from [core-kit](https://github.com/funtoo/core-kit/tree/1.4-release/app-shells/starship) via Portage:
+Sur Funtoo Linux, starship peut être installé à partir de [core-kit](https://github.com/funtoo/core-kit/tree/1.4-release/app-shells/starship) via Portage:
 
 ```sh
 emerge app-shells/starship
@@ -47,7 +47,7 @@ emerge app-shells/starship
 
 ## [Nix](https://nixos.wiki/wiki/Nix)
 
-### Getting the Binary
+### Obtention du binaire
 
 #### Impératif
 
@@ -57,14 +57,13 @@ nix-env -iA nixos.starship
 
 #### Déclaration, utilisateur unique, via [home-manager](https://github.com/nix-community/home-manager)
 
-Enable the `programs.starship` module in your `home.nix` file, and add your settings
+Activez le module `programs.starship` dans votre fichier `home.nix`, et ajoutez vos paramètres
 
 ```nix
 {
   programs.starship = {
     enable = true;
-    enableZshIntegration = true;
-    # Configuration written to ~/.config/starship.toml
+    # Configuration écrite dans ~/.config/starship.toml
     settings = {
       # add_newline = false;
 
@@ -79,7 +78,7 @@ Enable the `programs.starship` module in your `home.nix` file, and add your sett
 }
 ```
 
-then run
+puis lancez
 
 ```sh
 home-manager switch
@@ -87,7 +86,7 @@ home-manager switch
 
 #### Déclaration, au niveau du système, avec NixOS
 
-Add `pkgs.starship` to `environment.systemPackages` in your `configuration.nix`, then run
+Ajoutez `pkgs.starship` à `environment.systemPackages` dans votre `configuration.nix`, puis exécutez
 
 ```sh
 sudo nixos-rebuild switch

@@ -18,7 +18,7 @@ features:
 footer: لەژێر مۆڵەتی ISCـە | مافی پارێزراوە © 2019-ئێستا بەژداریکەرانی Starship
 #Used for the description meta tag, for SEO
 metaTitle: "Starship: یەکێ لە Promptـە شێڵ نەناسەکان"
-description: 'Starship: یەکێ لە promptـە سوکەڵە، خێرا، و بێسنور دڵخوازکراوەکان بۆ هەر شێڵێک! ئەو زانیارییانە پشان دەدات کە پێویستە، لەوکاتەیا بە ئارامی و سوکەڵەیی ئەمێنێتەوە. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, and PowerShell.'
+description: 'Starship: یەکێ لە promptـە سوکەڵە، خێرا، و بێسنور دڵخوازکراوەکان بۆ هەر شێڵێک! ئەو زانیارییانە پشان دەدات کە پێویستە، لەوکاتەیا بە ئارامی و سوکەڵەیی ئەمێنێتەوە. Quick installation available for Bash, Fish, ZSH, Ion, Tcsh, Elvish, Nu, Xonsh, Cmd, and PowerShell.'
 ---
 
 <div class="center">
@@ -42,8 +42,9 @@ description: 'Starship: یەکێ لە promptـە سوکەڵە، خێرا، و ب
    لەگەڵ شێڵ:
 
    ```sh
-   sh -c "$(curl -fsSL https://starship.rs/install.sh)"
+   curl -sS https://starship.rs/install.sh | sh
    ```
+
    بۆ نوێکردنەوەی Starship خۆی، نووسینەکەی سەرەوە ڕەن بکەوە. وەشانی ئێستا دەگۆڕێت بێ ئەوەی دەسکاری ڕێکخستنەکانی Starship بکات.
 
 
@@ -119,7 +120,11 @@ description: 'Starship: یەکێ لە promptـە سوکەڵە، خێرا، و ب
 
    #### Elvish
 
-   ::: ئاگادارکردنەوە تەنها elvish v0.15 یان بەرزتر پشتگیری کراوە. :::
+   ::: ئاگادارکردنەوە
+
+   Only elvish v0.18 or higher is supported.
+
+   :::
 
    ئەمەی خوارەوە زیادبکە لە کۆتایی `~/.elvish/rc.elv`:
 
@@ -143,24 +148,41 @@ description: 'Starship: یەکێ لە promptـە سوکەڵە، خێرا، و ب
 
    #### Nushell
 
-   ::: warning This will change in the future. Only nu version v0.33 or higher is supported. ::: Add the following to your nu config file. You can check the location of this file by running `config path` in nu.
+   ::: ئاگادارکردنەوە
 
-   ```toml
-   startup = [
-    "mkdir ~/.cache/starship",
-    "starship init nu | save ~/.cache/starship/init.nu",
-    "source ~/.cache/starship/init.nu"
-   ]
-   prompt = "starship_prompt"
+   This will change in the future. Only Nushell v0.61+ is supported.
+
+   :::
+
+   Add the following to to the end of your Nushell env file (find it by running `$nu.env-path` in Nushell):
+   ```sh
+   mkdir ~/.cache/starship
+   starship init nu | save ~/.cache/starship/init.nu
    ```
 
+   And add the following to the end of your Nushell configuration (find it by running `$nu.config-path`):
+
+   ```sh
+   source ~/.cache/starship/init.nu
+   ```
 
    #### Xonsh
 
-   Add the following to the end of `~/.xonshrc`:
+   ئەمەی دێت زیادبکە بۆ کۆتایی پەڕگەی `~/.xonshrc`:
 
    ```sh
    # ~/.xonshrc
 
    execx($(starship init xonsh))
+   ```
+
+
+   #### Cmd
+
+   You need to use [Clink](https://chrisant996.github.io/clink/clink.html) (v1.2.30+) with Cmd. Add the following to a file `starship.lua` and place this file in Clink scripts directory:
+
+   ```lua
+   -- starship.lua
+
+   load(io.popen('starship init cmd'):read("*a"))()
    ```

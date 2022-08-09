@@ -1,4 +1,4 @@
-use super::{Context, Module, RootModuleConfig};
+use super::{Context, Module, ModuleConfig};
 use crate::configs::battery::BatteryConfig;
 #[cfg(test)]
 use mockall::automock;
@@ -87,8 +87,8 @@ fn get_battery_status(context: &Context) -> Option<BatteryStatus> {
 
 /// the merge returns Charging if at least one is charging
 ///                   Discharging if at least one is Discharging
-///                   Full if both are Full or one is Full and the other Unknow
-///                   Empty if both are Empty or one is Empty and the other Unknow
+///                   Full if both are Full or one is Full and the other Unknown
+///                   Empty if both are Empty or one is Empty and the other Unknown
 ///                   Unknown otherwise
 fn merge_battery_states(state1: battery::State, state2: battery::State) -> battery::State {
     use battery::State::{Charging, Discharging, Unknown};

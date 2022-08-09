@@ -1,4 +1,4 @@
-# 🚀 Installazione Avanzata
+# Installazione Avanzata
 
 Per installare starship, è necessario fare due cose:
 
@@ -32,7 +32,7 @@ pkg install getconf
 ### Installazione
 
 ```sh
-sh -c "$(curl -fsSL https://starship.rs/install.sh)" -- --bin-dir /data/data/com.termux/files/usr/bin
+curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir /data/data/com.termux/files/usr/bin
 ```
 
 ## [Funtoo Linux](https://www.funtoo.org/Welcome)
@@ -47,7 +47,7 @@ emerge app-shells/starship
 
 ## [Nix](https://nixos.wiki/wiki/Nix)
 
-### Getting the Binary
+### Ottenere il Binario
 
 #### Imperativo
 
@@ -57,13 +57,12 @@ nix-env -iA nixos.starship
 
 #### Dichiarativo, singolo utente, tramite [home-manager](https://github.com/nix-community/home-manager)
 
-Enable the `programs.starship` module in your `home.nix` file, and add your settings
+Abilita il modulo `programs.starship` nel tuo file `home.nix` e aggiungi le tue impostazioni
 
 ```nix
 {
   programs.starship = {
     enable = true;
-    enableZshIntegration = true;
     # Configuration written to ~/.config/starship.toml
     settings = {
       # add_newline = false;
@@ -79,7 +78,7 @@ Enable the `programs.starship` module in your `home.nix` file, and add your sett
 }
 ```
 
-then run
+poi eseguire
 
 ```sh
 home-manager switch
@@ -87,7 +86,7 @@ home-manager switch
 
 #### Dichiarativa, di sistema, con NixOS
 
-Add `pkgs.starship` to `environment.systemPackages` in your `configuration.nix`, then run
+Aggiungi `pkgs.starship` a `environment.systemPackages` in `configuration.nix`, poi esegui
 
 ```sh
 sudo nixos-rebuild switch

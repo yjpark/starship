@@ -2,11 +2,35 @@
 
 Auch wenn Starship eine vielseitige Shell ist, reichen manche Konfigurationen in der `starship.toml` nicht aus, um erweiterte Einstellungen vorzunehmen. Diese Seite beschreibt einige fortgeschrittene Konfigurationen für Starship.
 
-::: Warnung
+::: warning
 
 Die hier beschriebenen Konfigurationen werden sich mit kommenden Updates von Starship verändern.
 
 :::
+
+## Custom pre-prompt and pre-execution Commands in Cmd
+
+Clink provides extremely flexible APIs to run pre-prompt and pre-exec commands in Cmd shell. It is fairly simple to use with Starship. Make the following changes to your `starship.lua` file as per your requirements:
+
+- To run a custom function right before the prompt is drawn, define a new function called `starship_preprompt_user_func`. This function receives the current prompt as a string that you can utilize. For example, to draw a rocket before the prompt, you would do
+
+```lua
+function starship_preprompt_user_func(prompt)
+  print("🚀")
+end
+
+load(io.popen('starship init cmd'):read("*a"))()
+```
+
+- To run a custom function right before a command is executed, define a new function called `starship_precmd_user_func`. This function receives the current commandline as a string that you can utilize. For example, to print the command that's about to be executed, you would do
+
+```lua
+function starship_precmd_user_func(line)
+  print("Executing: "..line)
+end
+
+load(io.popen('starship init cmd'):read("*a"))()
+```
 
 ## Benutzerdefinierte Pre-Prompt- und Pre-Execution-Befehle in der Bash
 
@@ -21,14 +45,16 @@ function blastoff(){
 starship_precmd_user_func="blastoff"
 ```
 
-- Um eine benutzerdefinierte Funktion direkt vor der Ausführung eines Befehls auszulösen, kann man den [`DEBUG` trap](https://jichu4n.com/posts/debug-trap-and-prompt_command-in-bash/) Mechanismus verwenden. Allerdings **muss** das DEBUG Signal *vor* der Initialisierung von Starship getrapped werden! Starship kann den Wert der DEBUG-trap speichern. Wenn der Wert der DEBUG-trap überschrieben wird nachdem Starship gestartet ist kann es zu Fehlern im Bezug auf die verwendete DEBUG-trap kommen.
+- Um eine benutzerdefinierte Funktion direkt vor der Ausführung eines Befehls auszulösen, kann man den [`DEBUG` trap](https://jichu4n.com/posts/debug-trap-and-prompt_command-in-bash/) Mechanismus verwenden. Allerdings **muss** das DEBUG Signal _vor_ der Initialisierung von Starship getrapped werden! Starship kann den Wert der DEBUG-trap speichern. Wenn der Wert der DEBUG-trap überschrieben wird nachdem Starship gestartet ist kann es zu Fehlern im Bezug auf die verwendete DEBUG-trap kommen.
 
 ```bash
 function blastoff(){
     echo "🚀"
 }
-trap blastoff DEBUG # DEBUG-Trap *bevor* Starship läuft
+trap blastoff DEBUG     # Trap DEBUG *before* running starship
+set -o functrace
 eval $(starship init bash)
+set +o functrace
 ```
 
 ## Custom pre-prompt and pre-execution Commands in PowerShell
@@ -43,27 +69,27 @@ function Invoke-Starship-PreCommand {
 }
 ```
 
-## Change Window Title
+## Fenstertitel anpassen
 
-Some shell prompts will automatically change the window title for you (e.g. to reflect your working directory). Fish even does it by default. Starship does not do this, but it's fairly straightforward to add this functionality to `bash` or `zsh`.
+Some shell prompts will automatically change the window title for you (e.g. to reflect your working directory). Fish ist standardmäßig so konfiguriert. Starship does not do this, but it's fairly straightforward to add this functionality to `bash`, `zsh`, `cmd` or `powershell`.
 
-First, define a window title change function (identical in bash and zsh):
+Zuerst wird eine Funktion definiert um den Fenstertitel zu ändern ( für bash und zsh ist die Funktion identisch):
 
 ```bash
 function set_win_title(){
-    echo -ne "\033]0; YOUR_WINDOW_TITLE_HERE \007"
+    echo -ne "\033]0; DEIN_FENSTERTITEL_HIER \007"
 }
 ```
 
-You can use variables to customize this title (`$USER`, `$HOSTNAME`, and `$PWD` are popular choices).
+Sie können Variablen verwenden, um diesen Titel anzupassen (`$USER`, `$HOSTNAME`, `$PWD`).
 
-In `bash`, set this function to be the precmd starship function:
+Für `bash` muss die Funktion als "precmd starship"-Funktion gesetzt werden:
 
 ```bash
 starship_precmd_user_func="set_win_title"
 ```
 
-In `zsh`, add this to the `precmd_functions` array:
+Füge dies in `Zsh` zum `precmd_functions`-Array hinzu:
 
 ```bash
 precmd_functions+=(set_win_title)
@@ -71,13 +97,23 @@ precmd_functions+=(set_win_title)
 
 If you like the result, add these lines to your shell configuration file (`~/.bashrc` or `~/.zshrc`) to make it permanent.
 
-For example, if you want to display your current directory in your terminal tab title, add the following snippet to your `~/.bashrc` or `~/.zshrc`:
+Zum Beispiel, wenn sie ihr aktuelles Verzeichnis als Terminal Title anzeigen wollen, fügen Sie folgenden Code-Schnipsel zu ihrer `~/.bashrc` oder `~/.zshrc` hinzu:
 
 ```bash
 function set_win_title(){
     echo -ne "\033]0; $(basename "$PWD") \007"
 }
 starship_precmd_user_func="set_win_title"
+```
+
+For Cmd, you can change the window title using the `starship_preprompt_user_func` function.
+
+```lua
+function starship_preprompt_user_func(prompt)
+  console.settitle(os.getenv('USERNAME').."@"..os.getenv('COMPUTERNAME')..": "..os.getcwd())
+end
+
+load(io.popen('starship init cmd'):read("*a"))()
 ```
 
 You can also set a similar output with PowerShell by creating a function named `Invoke-Starship-PreCommand`.
@@ -95,9 +131,9 @@ Invoke-Expression (&starship init powershell)
 
 Some shells support a right prompt which renders on the same line as the input. Starship can set the content of the right prompt using the `right_format` option. Any module that can be used in `format` is also supported in `right_format`. The `$all` variable will only contain modules not explicitly used in either `format` or `right_format`.
 
-Note: The right prompt is a single line following the input location. To right align modules above the input line in a multi-line prompt, see the [fill module](/config/#fill).
+Note: The right prompt is a single line following the input location. To right align modules above the input line in a multi-line prompt, see the [`fill` module](/config/#fill).
 
-`right_format` is currently supported for the following shells: elvish, fish, zsh.
+`right_format` is currently supported for the following shells: elvish, fish, zsh, xonsh, cmd.
 
 ### Beispiel
 
@@ -117,29 +153,51 @@ Produces a prompt like the following:
 ▶                                   starship on  rprompt [!] is 📦 v0.57.0 via 🦀 v1.54.0 took 17s
 ```
 
+## Fortsetzungsprompt
+
+Einige Shells unterstützen einen speziellen Fortsetzungsprompt zusätzlich zum normalen Prompt. Dieser Prompt wird anstelle des normalen Prompts ausgegeben, wenn der Benutzer ein unvollständiges Kommando eingegeben hat (etwa wie eine einzelne linke Klammer oder ein einzelnes Anführungszeichen).
+
+Starship kann das Aussehen des Fortsetzungs-Prompts mit der `continuation_prompt` Option einstellen. The default prompt is `"[∙](bright-black) "`.
+
+Hinweis: Die `continuation_prompt` Anweisung sollte auf einen literalen String ohne Variablen gesetzt werden.
+
+Hinweis: Fortsetzungs-Prompts sind nur für folgende Shells verfügbar:
+
+- `bash`
+- `zsh`
+- `PowerShell`
+
+### Beispiel
+
+```toml
+# ~/.config/starship.toml
+
+# Ein Fortsetzungs-Prompt der 2 ausgefüllte Pfeile darstellt
+continuation_prompt = "▶▶"
+```
 
 ## Style-Strings
 
-Style strings are a list of words, separated by whitespace. The words are not case sensitive (i.e. `bold` and `BoLd` are considered the same string). Each word can be one of the following:
+Style-String sind Wortlisten, getrennt durch Leerzeichen. Die Wörter haben keine Groß- und Kleinschreibung (z.B. `bold` und `BoLd` werden als dieselbe Zeichenkette betrachtet). Jedes Wort kann eines der folgenden sein:
 
-  - `bold`
-  - `italic`
-  - `underline`
-  - `dimmed`
-  - `inverted`
-  - `bg:<color>`
-  - `fg:<color>`
-  - `<color>`
-  - `none`
+- `bold`
+- `italic`
+- `underline`
+- `dimmed`
+- `invertiert`
+- `bg:<color>`
+- `fg:<color>`
+- `<color>`
+- `none`
 
-where `<color>` is a color specifier (discussed below). `fg:<color>` and `<color>` currently do the same thing, though this may change in the future. `inverted` swaps the background and foreground colors. The order of words in the string does not matter.
+wobei `<color>` eine Farbspezifikation ist (siehe unten). `fg:<color>` und `<color>` tun derzeit dasselbe, das kann sich in Zukunft aber ändern. `inverted` tauscht Hinter- und Vordergrundfarben. Die Reihenfolge der Wörter in der Liste spielt keine Rolle.
 
-The `none` token overrides all other tokens in a string if it is not part of a `bg:` specifier, so that e.g. `fg:red none fg:blue` will still create a string with no styling. `bg:none` sets the background to the default color so `fg:red bg:none` is equivalent to `red` or `fg:red` and `bg:green fg:red bg:none` is also equivalent to `fg:red` or `red`. It may become an error to use `none` in conjunction with other tokens in the future.
+`none` überschreibt alle anderen Tokens in einem String wenn es nicht ein Teil einer `bg:` Zeichenkette ist, so dass z.B. über die Zeichenkette `fg:red none fg:blue` kein Styling mehr anzeigt wird. `bg:none` setzt den Hintergrund auf die Standardfarbe, so `fg:red bg:none` entspricht `rot` oder `fg:red` und `bg:green fg:red bg:none` entspricht auch `fg:red` oder `rot`. In der Zukunft könnte die Unterstützung von `none` in Verbindung mit anderen Tokens fallen gelassen werden.
 
-A color specifier can be one of the following:
+Eine Farbspezifikation kann wie folgt aussehen:
 
- - Einer der Standardfarben der Konsole: `black`, `red`, `green`, `blue`, `yellow`, `purple`, `cyan`, `white`. Optional kann ein `bright-` vorangestellt werden um die helle Version zu erhalten (z.B. `bright-white`).
- - Eine `#` gefolgt von einer sechsstelligen Hexadezimalnummer. Dies ergibt einen [RGB hex Farbcode](https://www.w3schools.com/colors/colors_hexadecimal.asp).
- - Eine Zahl zwischen 0-255. Dies ergibt einen [8-bit ANSI-Farbcode](https://i.stack.imgur.com/KTSQa.png).
+- One of the standard terminal colors: `black`, `red`, `green`, `blue`, `yellow`, `purple`, `cyan`, `white`. You can optionally prefix these with `bright-` to get the bright version (e.g. `bright-white`).
+- Eine `#` gefolgt von einer sechsstelligen Hexadezimalnummer. Dies ergibt einen [RGB hex Farbcode](https://www.w3schools.com/colors/colors_hexadecimal.asp).
+- Eine Zahl zwischen 0-255. Dies ergibt einen [8-bit ANSI-Farbcode](https://i.stack.imgur.com/KTSQa.png).
 
-If multiple colors are specified for foreground/background, the last one in the string will take priority.
+Wenn mehrere Farben für Vordergrund oder Hintergrund angegeben werden, hat die letzte Farbe der Zeichenkette Priorität.

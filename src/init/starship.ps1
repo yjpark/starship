@@ -1,7 +1,8 @@
 #!/usr/bin/env pwsh
 
-function global:prompt {
-        
+# Create a new dynamic module so we don't pollute the global namespace with our functions and
+# variables
+$null = New-Module starship {
     function Get-Cwd {
         $cwd = Get-Location
         $provider_prefix = "$($cwd.Provider.ModuleName)\$($cwd.Provider.Name)::"
@@ -10,7 +11,7 @@ function global:prompt {
             # NOTE: ProviderPath is only a physical filesystem path for the "FileSystem" provider
             # E.g. `Dev:\` -> `C:\Users\Joe Bloggs\Dev\`
             Path = $cwd.ProviderPath;
-            # Resolve the provider-logical path 
+            # Resolve the provider-logical path
             # NOTE: Attempt to trim any "provider prefix" from the path string.
             # E.g. `Microsoft.PowerShell.Core\FileSystem::Dev:\` -> `Dev:\`
             LogicalPath =
@@ -63,77 +64,144 @@ function global:prompt {
         $process.StandardOutput.ReadToEnd();
     }
 
-    $origDollarQuestion = $global:?
-    $origLastExitCode = $global:LASTEXITCODE
-
-    # Invoke precmd, if specified
-    try {
-        if (Test-Path function:Invoke-Starship-PreCommand) {
-            Invoke-Starship-PreCommand
+    function Enable-TransientPrompt {
+        Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
+            $previousOutputEncoding = [Console]::OutputEncoding
+            try {
+                $parseErrors = $null
+                [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$null, [ref]$null, [ref]$parseErrors, [ref]$null)
+                if ($parseErrors.Count -eq 0) {
+                    $script:TransientPrompt = $true
+                    [Console]::OutputEncoding = [Text.Encoding]::UTF8
+                    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+                }
+            } finally {
+                if ($script:DoesUseLists) {
+                    # If PSReadline is set to display suggestion list, this workaround is needed to clear the buffer below
+                    # before accepting the current commandline. The max amount of items in the list is 10, so 12 lines
+                    # are cleared (10 + 1 more for the prompt + 1 more for current commandline).
+                    [Microsoft.PowerShell.PSConsoleReadLine]::Insert("`n" * [math]::Min($Host.UI.RawUI.WindowSize.Height - $Host.UI.RawUI.CursorPosition.Y - 1, 12))
+                    [Microsoft.PowerShell.PSConsoleReadLine]::Undo()
+                }
+                [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+                [Console]::OutputEncoding = $previousOutputEncoding
+            }
         }
-    } catch {}
-
-    # @ makes sure the result is an array even if single or no values are returned
-    $jobs = @(Get-Job | Where-Object { $_.State -eq 'Running' }).Count
-    
-    $cwd = Get-Cwd
-    $arguments = @(
-        "prompt"
-        "--path=$($cwd.Path)",
-        "--logical-path=$($cwd.LogicalPath)",
-        "--terminal-width=$($Host.UI.RawUI.WindowSize.Width)",
-        "--jobs=$($jobs)"
-    )
-    
-    # Whe start from the premise that the command executed correctly, which covers also the fresh console.
-    $lastExitCodeForPrompt = 0
-    if ($lastCmd = Get-History -Count 1) {
-        # In case we have a False on the Dollar hook, we know there's an error.
-        if (-not $origDollarQuestion) {
-            # We retrieve the InvocationInfo from the most recent error using $error[0]
-            $lastCmdletError = try { $error[0] |  Where-Object { $_ -ne $null } | Select-Object -ExpandProperty InvocationInfo } catch { $null }
-            # We check if the last command executed matches the line that caused the last error, in which case we know
-            # it was an internal Powershell command, otherwise, there MUST be an error code.
-            $lastExitCodeForPrompt = if ($null -ne $lastCmdletError -and $lastCmd.CommandLine -eq $lastCmdletError.Line) { 1 } else { $origLastExitCode }
-        }
-        $duration = [math]::Round(($lastCmd.EndExecutionTime - $lastCmd.StartExecutionTime).TotalMilliseconds)
-        
-        $arguments += "--cmd-duration=$($duration)"
     }
 
-    $arguments += "--status=$($lastExitCodeForPrompt)"
+    function Disable-TransientPrompt {
+        Set-PSReadLineKeyHandler -Key Enter -Function AcceptLine
+        $script:TransientPrompt = $false
+    }
 
-    # Invoke Starship
-    Invoke-Native -Executable ::STARSHIP:: -Arguments $arguments
+    function global:prompt {
+        $origDollarQuestion = $global:?
+        $origLastExitCode = $global:LASTEXITCODE
 
-    # Propagate the original $LASTEXITCODE from before the prompt function was invoked.
-    $global:LASTEXITCODE = $origLastExitCode
+        # Invoke precmd, if specified
+        try {
+            if (Test-Path function:Invoke-Starship-PreCommand) {
+                Invoke-Starship-PreCommand
+            }
+        } catch {}
 
-    # Propagate the original $? automatic variable value from before the prompt function was invoked.
-    #
-    # $? is a read-only or constant variable so we can't directly override it.
-    # In order to propagate up its original boolean value we will take an action
-    # which will produce the desired value.
-    #
-    # This has to be the very last thing that happens in the prompt function
-    # since every PowerShell command sets the $? variable.
-    if ($global:? -ne $origDollarQuestion) {
-        if ($origDollarQuestion) {
-             # Simple command which will execute successfully and set $? = True without any other side affects.
-            1+1
+        # @ makes sure the result is an array even if single or no values are returned
+        $jobs = @(Get-Job | Where-Object { $_.State -eq 'Running' }).Count
+
+        $cwd = Get-Cwd
+        $arguments = @(
+            "prompt"
+            "--path=$($cwd.Path)",
+            "--logical-path=$($cwd.LogicalPath)",
+            "--terminal-width=$($Host.UI.RawUI.WindowSize.Width)",
+            "--jobs=$($jobs)"
+        )
+
+        # We start from the premise that the command executed correctly, which covers also the fresh console.
+        $lastExitCodeForPrompt = 0
+        if ($lastCmd = Get-History -Count 1) {
+            # In case we have a False on the Dollar hook, we know there's an error.
+            if (-not $origDollarQuestion) {
+                # We retrieve the InvocationInfo from the most recent error using $global:error[0]
+                $lastCmdletError = try { $global:error[0] |  Where-Object { $_ -ne $null } | Select-Object -ExpandProperty InvocationInfo } catch { $null }
+                # We check if the last command executed matches the line that caused the last error, in which case we know
+                # it was an internal Powershell command, otherwise, there MUST be an error code.
+                $lastExitCodeForPrompt = if ($null -ne $lastCmdletError -and $lastCmd.CommandLine -eq $lastCmdletError.Line) { 1 } else { $origLastExitCode }
+            }
+            $duration = [math]::Round(($lastCmd.EndExecutionTime - $lastCmd.StartExecutionTime).TotalMilliseconds)
+
+            $arguments += "--cmd-duration=$($duration)"
+        }
+
+        $arguments += "--status=$($lastExitCodeForPrompt)"
+
+        # Invoke Starship
+        $promptText = if ($script:TransientPrompt) {
+            $script:TransientPrompt = $false
+            if (Test-Path function:Invoke-Starship-TransientFunction) {
+                Invoke-Starship-TransientFunction
+            } else {
+                "$([char]0x1B)[1;32m❯$([char]0x1B)[0m "
+            }
         } else {
-            # Write-Error will set $? to False.
-            # ErrorAction Ignore will prevent the error from being added to the $Error collection.
-            Write-Error '' -ErrorAction 'Ignore'
+            Invoke-Native -Executable ::STARSHIP:: -Arguments $arguments
         }
+
+        # Set the number of extra lines in the prompt for PSReadLine prompt redraw.
+        Set-PSReadLineOption -ExtraPromptLineCount ($promptText.Split("`n").Length - 1)
+
+        # Return the prompt
+        $promptText
+
+        # Propagate the original $LASTEXITCODE from before the prompt function was invoked.
+        $global:LASTEXITCODE = $origLastExitCode
+
+        # Propagate the original $? automatic variable value from before the prompt function was invoked.
+        #
+        # $? is a read-only or constant variable so we can't directly override it.
+        # In order to propagate up its original boolean value we will take an action
+        # which will produce the desired value.
+        #
+        # This has to be the very last thing that happens in the prompt function
+        # since every PowerShell command sets the $? variable.
+        if ($global:? -ne $origDollarQuestion) {
+            if ($origDollarQuestion) {
+                 # Simple command which will execute successfully and set $? = True without any other side affects.
+                1+1
+            } else {
+                # Write-Error will set $? to False.
+                # ErrorAction Ignore will prevent the error from being added to the $Error collection.
+                Write-Error '' -ErrorAction 'Ignore'
+            }
+        }
+
     }
 
+    # Disable virtualenv prompt, it breaks starship
+    $ENV:VIRTUAL_ENV_DISABLE_PROMPT=1
+
+    $script:TransientPrompt = $false
+    $script:DoesUseLists = (Get-PSReadLineOption).PredictionViewStyle -eq 'ListView'
+
+    if ($PSVersionTable.PSVersion.Major -gt 5) {
+        $ENV:STARSHIP_SHELL = "pwsh"
+    } else {
+        $ENV:STARSHIP_SHELL = "powershell"
+    }
+
+    # Set up the session key that will be used to store logs
+    $ENV:STARSHIP_SESSION_KEY = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
+
+    # Invoke Starship and set continuation prompt
+    Set-PSReadLineOption -ContinuationPrompt (
+        Invoke-Native -Executable ::STARSHIP:: -Arguments @(
+            "prompt",
+            "--continuation"
+        )
+    )
+
+    Export-ModuleMember -Function @(
+        "Enable-TransientPrompt"
+        "Disable-TransientPrompt"
+    )
 }
-
-# Disable virtualenv prompt, it breaks starship
-$ENV:VIRTUAL_ENV_DISABLE_PROMPT=1
-
-$ENV:STARSHIP_SHELL = "powershell"
-
-# Set up the session key that will be used to store logs
-$ENV:STARSHIP_SESSION_KEY = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 16 | ForEach-Object { [char]$_ })

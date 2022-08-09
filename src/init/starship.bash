@@ -12,6 +12,9 @@
 # drawn, and only start the timer if this flag is present. That way, timing is
 # for the entire command, and not just a portion of it.
 
+# A way to set '$?', since bash does not allow assigning to '$?' directly
+function _starship_set_return() { return "${1:-0}"; }
+
 # Will be run before *every* command (even ones in pipes!)
 starship_preexec() {
     # Save previous command's last argument, otherwise it will be set to "starship_preexec"
@@ -35,13 +38,17 @@ starship_precmd() {
     fi
 
     local NUM_JOBS=0
-    # Evaluate the number of jobs before running the preseved prompt command, so that tools
+    # Evaluate the number of jobs before running the preserved prompt command, so that tools
     # like z/autojump, which background certain jobs, do not cause spurious background jobs
     # to be displayed by starship. Also avoids forking to run `wc`, slightly improving perf.
     for job in $(jobs -p); do [[ $job ]] && ((NUM_JOBS++)); done
 
     # Run the bash precmd function, if it's set. If not set, evaluates to no-op
     "${starship_precmd_user_func-:}"
+
+    # Set $? to the preserved value before running additional parts of the prompt
+    # command pipeline, which may rely on it.
+    _starship_set_return "$STARSHIP_CMD_STATUS"
 
     eval "$_PRESERVED_PROMPT_COMMAND"
 
@@ -92,6 +99,9 @@ else
     fi
 fi
 
+# Ensure that $COLUMNS gets set
+shopt -s checkwinsize
+
 # Set up the start time and STARSHIP_SHELL, which controls shell-specific sequences
 STARSHIP_START_TIME=$(::STARSHIP:: time)
 export STARSHIP_SHELL="bash"
@@ -100,3 +110,7 @@ export STARSHIP_SHELL="bash"
 STARSHIP_SESSION_KEY="$RANDOM$RANDOM$RANDOM$RANDOM$RANDOM"; # Random generates a number b/w 0 - 32767
 STARSHIP_SESSION_KEY="${STARSHIP_SESSION_KEY}0000000000000000" # Pad it to 16+ chars.
 export STARSHIP_SESSION_KEY=${STARSHIP_SESSION_KEY:0:16}; # Trim to 16-digits if excess.
+
+# Set the continuation prompt
+PS2="$(::STARSHIP:: prompt --continuation)"
+
