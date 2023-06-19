@@ -133,10 +133,12 @@ pub fn get_prompt(context: Context) -> String {
             write!(buf, "{}", pattern).unwrap();
             count = count - chars_count;
         }
-        let mut chars = pattern.chars();
-        while count > 0 {
-            write!(buf, "{}", chars.next().unwrap()).unwrap();
-            count = count - 1;
+        if count > 0 {
+            let mut chars = pattern.chars();
+            while count > 0 {
+                write!(buf, "{}", chars.next().unwrap()).unwrap();
+                count = count - 1;
+            }
         }
         writeln!(buf).unwrap();
     }
@@ -757,7 +759,9 @@ mod test {
         });
         context.target = Target::Main;
 
-        let separator = std::iter::repeat("-").take(context.width).collect::<String>();
+        let separator = std::iter::repeat("-")
+            .take(context.width)
+            .collect::<String>();
         let expected = format!("{}\n", separator);
         let actual = get_prompt(context);
         assert_eq!(expected, actual);
