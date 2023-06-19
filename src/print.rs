@@ -123,9 +123,9 @@ pub fn get_prompt(context: Context) -> String {
     }
     if config.add_separator && context.width > 0 {
         let pattern = if config.separator_pattern.len() > 0 {
-            config.separator_pattern
+            &config.separator_pattern
         } else {
-            "═".to_string()
+            "═"
         };
         let count = std::cmp::max(1, context.width / pattern.len());
         let line = std::iter::repeat(pattern).take(count).collect::<String>();
