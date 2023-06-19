@@ -121,9 +121,19 @@ pub fn get_prompt(context: Context) -> String {
         // continuation prompts normally do not include newlines, but they can
         writeln!(buf).unwrap();
     }
-    if context.width > 0 {
-        let line = std::iter::repeat("═").take(context.width).collect::<String>();
-        write!(buf, "{}\n", line).unwrap();
+    if config.add_separator && context.width > 0 {
+        let pattern = if config.separator_pattern.len() > 0 {
+            config.separator_pattern
+        } else {
+            "═".to_string()
+        };
+        let count = std::cmp::max(1, context.width / pattern.len());
+        let line = std::iter::repeat(pattern).take(count).collect::<String>();
+        if line.len() > context.width {
+            write!(buf, "{}\n", line.split_at(context.width).0).unwrap();
+        } else {
+            write!(buf, "{}\n", line).unwrap();
+        }
     }
     write!(buf, "{}", AnsiStrings(&module_strings)).unwrap();
 
