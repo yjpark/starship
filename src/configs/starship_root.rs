@@ -136,7 +136,7 @@ impl Default for StarshipRootConfig {
             command_timeout: 500,
             add_newline: true,
             add_separator: false,
-            separator_pattern: "═",
+            separator_pattern: "═".to_string(),
             palette: None,
             palettes: HashMap::default(),
         }
