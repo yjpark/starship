@@ -127,13 +127,18 @@ pub fn get_prompt(context: Context) -> String {
         } else {
             "═"
         };
-        let count = std::cmp::max(1, context.width / pattern.len());
-        let line = std::iter::repeat(pattern).take(count).collect::<String>();
-        if line.len() > context.width {
-            write!(buf, "{}\n", line.split_at(context.width).0).unwrap();
-        } else {
-            write!(buf, "{}\n", line).unwrap();
+        let chars_count = pattern.chars().count();
+        let mut count = context.width;
+        while count >= chars_count {
+            write!(buf, "{}", pattern).unwrap();
+            count = count - chars_count;
         }
+        let mut chars = pattern.chars();
+        while count > 0 {
+            write!(buf, "{}", chars.next().unwrap()).unwrap();
+            count = count - 1;
+        }
+        writeln!(buf).unwrap();
     }
     write!(buf, "{}", AnsiStrings(&module_strings)).unwrap();
 
