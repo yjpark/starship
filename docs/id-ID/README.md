@@ -10,7 +10,7 @@ features:
     title: Kompatibilitas Yang Utama
     details: Dapat berfungsi di shells standar dengan sistem operasi yang paling biasa. Pakai di mana saja!
   - 
-    title: Dibangun Dengan Rust
+    title: Dibuat dengan Rust
     details: Menggunakan kecepatan dan keamanan dari Rust, untuk membuat prompt kamu bekerja secepat dan seandal mungkin.
   - 
     title: Dapat Dikustomisasi
@@ -55,11 +55,10 @@ description: Starship merupakan sebuah prompt yang minimal, super cepat, dan san
    ```sh
    brew install starship
    ```
-
-   Dengan [Scoop](https://scoop.sh):
+   With [Winget](https://github.com/microsoft/winget-cli):
 
    ```powershell
-   scoop install starship
+   winget install starship
    ```
 
 1. Tambahkan skrip init ke dalam file konfigurasi Shell:
@@ -150,14 +149,14 @@ description: Starship merupakan sebuah prompt yang minimal, super cepat, dan san
 
    ::: warning
 
-   Hal ini dapat berubah di kemudian hari. Hanya Nushell v0.61+ yang menerima dukungan.
+   Hal ini dapat berubah di kemudian hari. Hanya Nushell v0.73+ yang menerima dukungan.
 
    :::
 
-   Tambahkan baris berikut di akhir env file Nushell (dengan menjalankan `$nu.env-path` di Nushell):
+   Add the following to the end of your Nushell env file (find it by running `$nu.env-path` in Nushell):
    ```sh
    mkdir ~/.cache/starship
-   starship init nu | save ~/.cache/starship/init.nu
+   starship init nu | save -f ~/.cache/starship/init.nu
    ```
 
    Lalu tambahkan baris berikut di baris terakhir konfigurasi Nushell (temukan dengan menjalankan `$nu.config-path`):
