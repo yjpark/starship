@@ -125,7 +125,7 @@ pub fn get_prompt(context: Context) -> String {
         let line = std::iter::repeat("═").take(context.width).collect::<String>();
         write!(buf, "{}\n", line).unwrap();
     }
-    write!(buf, "{}", ANSIStrings(&module_strings)).unwrap();
+    write!(buf, "{}", AnsiStrings(&module_strings)).unwrap();
 
     if context.target == Target::Right {
         // right prompts generally do not allow newlines
