@@ -744,4 +744,41 @@ mod test {
         assert_eq!(expected, actual);
         dir.close()
     }
+
+    #[test]
+    fn add_separator_single() {
+        let mut context = default_context().set_config(toml::toml! {
+                add_newline=false
+                add_separator=true
+                separator_pattern="-"
+                format="$character"
+                [character]
+                format=""
+        });
+        context.target = Target::Main;
+
+        let separator = std::iter::repeat("-").take(context.width).collect::<String>();
+        let expected = format!("{}\n", separator);
+        let actual = get_prompt(context);
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn add_separator_multi() {
+        let mut context = default_context().set_config(toml::toml! {
+                add_newline=false
+                add_separator=true
+                separator_pattern="ABCDEFG"
+                format="$character"
+                [character]
+                format=""
+        });
+        context.target = Target::Main;
+        context.width = 20;
+
+        let separator = std::iter::repeat("ABCDEFG").take(3).collect::<String>();
+        let expected = format!("{}\n", separator.split_at(context.width).0);
+        let actual = get_prompt(context);
+        assert_eq!(expected, actual);
+    }
 }
